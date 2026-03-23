@@ -4,7 +4,14 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: () => import('layouts/MainLayout.vue'),
-    children: [{ path: '', component: () => import('pages/IndexPage.vue') }],
+    children: [
+      { path: '', component: () => import('pages/IndexPage.vue') },
+      {
+        path: 'electronics/voltage-divider',
+        component: () => import('pages/VoltageDividerPage.vue'),
+        meta: { toolName: 'Voltage Divider' },
+      },
+    ],
   },
 
   // Always leave this as last one,

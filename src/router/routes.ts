@@ -11,6 +11,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('pages/VoltageDividerPage.vue'),
         meta: { toolName: 'Voltage Divider' },
       },
+      {
+        path: 'woodworking/board-cut-optimizer',
+        component: () => import('pages/BoardCutOptimizerPage.vue'),
+        meta: { toolName: 'Board Cut Optimizer' },
+      },
     ],
   },
 

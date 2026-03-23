@@ -25,4 +25,17 @@ export const toolCategories: readonly ToolCategory[] = [
       },
     ],
   },
+  {
+    name: 'Woodworking',
+    icon: 'carpenter',
+    tools: [
+      {
+        name: 'Board Cut Optimizer',
+        icon: 'content_cut',
+        description:
+          'Optimize 1D board cuts to minimize waste. Supports multiple stock types, kerf, and remnant tracking.',
+        routePath: '/woodworking/board-cut-optimizer',
+      },
+    ],
+  },
 ];

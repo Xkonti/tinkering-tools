@@ -4,6 +4,7 @@ export interface StockBoard {
   id: string;
   stockTypeName: string;
   length: number;
+  name?: string;
 }
 
 export interface StockType {

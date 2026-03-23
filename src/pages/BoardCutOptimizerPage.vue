@@ -96,6 +96,15 @@
                       min="1"
                     />
                   </div>
+                  <div class="col">
+                    <q-input
+                      v-model="board.name"
+                      outlined
+                      dense
+                      label="Name (optional)"
+                      placeholder="e.g. From concrete framing"
+                    />
+                  </div>
                   <div class="col-auto">
                     <q-btn
                       flat
@@ -283,7 +292,12 @@
                 class="q-mb-md"
               >
                 <div class="text-subtitle2 q-mb-xs">
-                  Board #{{ pIdx + 1 }} ({{ pattern.stockBoard.length }}&quot;)
+                  Board #{{ pIdx + 1 }}
+                  ({{ pattern.stockBoard.length }}&quot;){{
+                    pattern.stockBoard.name
+                      ? ' — ' + pattern.stockBoard.name
+                      : ''
+                  }}
                 </div>
 
                 <!-- Visual bar -->
@@ -419,7 +433,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import { storeToRefs } from 'pinia';
 import { optimizeCuts } from 'src/utils/boardCutOptimizer';
 import type {
   CutOptimizerInput,
@@ -428,85 +443,24 @@ import type {
   PlacedPiece,
   StockBoard,
 } from 'src/utils/boardCutOptimizer';
+import { useBoardCutOptimizerStore } from 'src/stores/boardCutOptimizer';
 
-// --- UI input state ---
-
-interface StockTypeInput {
-  id: string;
-  name: string;
-  boards: { id: string; length: number | null; quantity: number | null }[];
-}
-
-interface RequiredPieceInput {
-  id: string;
-  stockTypeName: string;
-  length: number | null;
-  quantity: number | null;
-  name: string;
-}
-
-const kerf = ref<number>(0.125);
-const minUsefulRemnant = ref<number>(10);
-
-const stockTypes = ref<StockTypeInput[]>([
-  {
-    id: crypto.randomUUID(),
-    name: '2x4',
-    boards: [{ id: crypto.randomUUID(), length: 96, quantity: 10 }],
-  },
-]);
-
-const requiredPieces = ref<RequiredPieceInput[]>([
-  {
-    id: crypto.randomUUID(),
-    stockTypeName: '2x4',
-    length: 24,
-    quantity: 10,
-    name: '',
-  },
-]);
-
-// --- Computed helpers ---
-
-const stockTypeNames = computed(() =>
-  stockTypes.value.map((s) => s.name).filter((n) => n.length > 0),
-);
-
-// --- Actions ---
-
-function addStockType() {
-  stockTypes.value.push({
-    id: crypto.randomUUID(),
-    name: '',
-    boards: [{ id: crypto.randomUUID(), length: null, quantity: null }],
-  });
-}
-
-function removeStockType(id: string) {
-  stockTypes.value = stockTypes.value.filter((s) => s.id !== id);
-}
-
-function addBoard(st: StockTypeInput) {
-  st.boards.push({ id: crypto.randomUUID(), length: null, quantity: null });
-}
-
-function removeBoard(st: StockTypeInput, boardId: string) {
-  st.boards = st.boards.filter((b) => b.id !== boardId);
-}
-
-function addRequiredPiece() {
-  requiredPieces.value.push({
-    id: crypto.randomUUID(),
-    stockTypeName: stockTypeNames.value[0] ?? '',
-    length: null,
-    quantity: null,
-    name: '',
-  });
-}
-
-function removeRequiredPiece(id: string) {
-  requiredPieces.value = requiredPieces.value.filter((p) => p.id !== id);
-}
+const store = useBoardCutOptimizerStore();
+const {
+  kerf,
+  minUsefulRemnant,
+  stockTypes,
+  requiredPieces,
+  stockTypeNames,
+} = storeToRefs(store);
+const {
+  addStockType,
+  removeStockType,
+  addBoard,
+  removeBoard,
+  addRequiredPiece,
+  removeRequiredPiece,
+} = store;
 
 // --- Optimization ---
 
@@ -525,11 +479,13 @@ function buildInput(): CutOptimizerInput | null {
       if (!Number.isFinite(b.length) || b.length <= 0) return null;
       if (!Number.isFinite(b.quantity) || b.quantity < 1) return null;
       for (let i = 0; i < b.quantity; i++) {
-        boards.push({
+        const board: StockBoard = {
           id: crypto.randomUUID(),
           stockTypeName: st.name,
           length: b.length,
-        });
+        };
+        if (b.name) board.name = b.name;
+        boards.push(board);
       }
     }
     types.push({ name: st.name, boards });

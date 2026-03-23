@@ -218,8 +218,20 @@
         </q-card>
       </div>
 
+      <!-- Computing indicator -->
+      <div v-if="isComputing" class="col-12">
+        <q-card>
+          <q-card-section class="text-center q-pa-lg">
+            <q-spinner-dots size="40px" color="primary" />
+            <div class="text-body1 text-grey-7 q-mt-sm">
+              Optimizing cut patterns...
+            </div>
+          </q-card-section>
+        </q-card>
+      </div>
+
       <!-- Results -->
-      <template v-if="result">
+      <template v-if="result && !isComputing">
         <!-- Unfulfilled warning -->
         <div v-if="result.unfulfilled.length > 0" class="col-12">
           <q-banner class="bg-orange-8 text-white rounded-borders">
@@ -245,19 +257,27 @@
             <q-card-section>
               <div class="text-h6 q-mb-md">Summary</div>
               <div class="row q-col-gutter-md">
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md-2">
                   <div class="text-subtitle2 text-grey-7">Stock Used</div>
                   <div class="text-h5">
                     {{ result.summary.totalStockUsed }} boards
                   </div>
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-6 col-md-2">
                   <div class="text-subtitle2 text-grey-7">Efficiency</div>
                   <div class="text-h5 text-primary">
                     {{ result.summary.efficiencyPercent.toFixed(1) }}%
                   </div>
                 </div>
                 <div class="col-6 col-md-3">
+                  <div class="text-subtitle2 text-grey-7">
+                    Preserved Stock
+                  </div>
+                  <div class="text-h5 text-positive">
+                    {{ result.summary.preservedStockLength.toFixed(1) }}&quot;
+                  </div>
+                </div>
+                <div class="col-6 col-md-2">
                   <div class="text-subtitle2 text-grey-7">Waste</div>
                   <div class="text-h5 text-negative">
                     {{ result.summary.totalWaste.toFixed(2) }}&quot;
@@ -420,7 +440,7 @@
       </template>
 
       <!-- Empty state -->
-      <div v-else class="col-12">
+      <div v-else-if="!isComputing" class="col-12">
         <q-card>
           <q-card-section class="text-center text-grey-5">
             Fill in stock inventory and required pieces to see optimized cut
@@ -433,8 +453,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { storeToRefs } from 'pinia';
+import { watchDebounced } from '@vueuse/core';
 import { optimizeCuts } from 'src/utils/boardCutOptimizer';
 import type {
   CutOptimizerInput,
@@ -516,11 +537,26 @@ function buildInput(): CutOptimizerInput | null {
   };
 }
 
-const result = computed<CutOptimizerResult | null>(() => {
-  const input = buildInput();
-  if (!input) return null;
-  return optimizeCuts(input);
-});
+const input = computed(() => buildInput());
+const result = ref<CutOptimizerResult | null>(null);
+const isComputing = ref(false);
+
+watchDebounced(
+  input,
+  (newInput) => {
+    if (!newInput) {
+      result.value = null;
+      isComputing.value = false;
+      return;
+    }
+    isComputing.value = true;
+    setTimeout(() => {
+      result.value = optimizeCuts(newInput);
+      isComputing.value = false;
+    }, 10);
+  },
+  { debounce: 300, deep: true, immediate: true },
+);
 
 const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
   if (!result.value) return [];

@@ -29,3 +29,17 @@ bun run format       # format
 ## Routing
 
 The app uses Vue Router in **history mode** (no `#` in URLs).
+Route meta is typed via `src/router/route-meta.d.ts` — no need to cast `route.meta` fields.
+
+## Architecture
+
+- Tool registry in `src/data/tools.ts` defines all categories and tools — used by both sidebar nav and index page
+- Sidebar nav components: `ToolCategoryNav.vue` (accordion) and `ToolEntryNav.vue` (nav item)
+- Tool pages live in `src/pages/` and are added as children of the MainLayout route in `src/router/routes.ts`
+
+## Code conventions
+
+- ESLint enforces `consistent-type-imports` — always use `import type { ... }` for type-only imports
+- Quasar components are auto-imported; custom components need explicit imports in `<script setup>`
+- TypeScript strict mode with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess` enabled
+- No custom CSS — use Quasar utility classes (`q-pa-md`, `row`, `col-*`, `text-*`, etc.) and component props

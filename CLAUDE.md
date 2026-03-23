@@ -22,9 +22,12 @@ A single-page application (SPA) providing a collection of in-browser tools for d
 bun install          # install dependencies
 bun run dev          # start dev server
 bun run build        # production build
+bun run typecheck    # type-check (vue-tsc)
 bun run lint         # lint
 bun run format       # format
 ```
+
+Before finishing a task, always run `bun run typecheck` and `bun run lint` to verify correctness.
 
 ## Routing
 

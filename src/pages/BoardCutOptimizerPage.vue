@@ -441,11 +441,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { optimizeCuts } from 'src/utils/boardCutOptimizer';
 import type {
   CutOptimizerInput,
+  CutOptimizerResult,
   CutPattern,
   PlacedPiece,
   StockBoard,
@@ -523,11 +524,15 @@ function buildInput(): CutOptimizerInput | null {
   };
 }
 
-const result = computed(() => {
-  const inp = buildInput();
-  if (!inp) return null;
-  return optimizeCuts(inp);
-});
+const result = ref<CutOptimizerResult | null>(null);
+watch(
+  [kerf, minUsefulRemnant, stockTypes, requiredPieces],
+  () => {
+    const inp = buildInput();
+    result.value = inp ? optimizeCuts(inp) : null;
+  },
+  { deep: true, immediate: true },
+);
 
 const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
   if (!result.value) return [];

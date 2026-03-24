@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decimalToFraction,
   formatDistance,
+  formatDistanceWithSettings,
   formatImperial,
   formatMetric,
   isValidPartialInput,
@@ -9,7 +10,7 @@ import {
   parseUnitInput,
 } from './unitParsing';
 import { DISTANCE_UNITS } from './units';
-import type { UnitDefinition } from './units';
+import type { DisplaySettings, UnitDefinition } from './units';
 
 const config = DISTANCE_UNITS;
 const INCH_MM = 25.4;
@@ -443,5 +444,190 @@ describe('isValidPartialInput', () => {
 
   it('rejects double spaces', () => {
     expect(isValidPartialInput('3  5in')).toBe(false);
+  });
+});
+
+// ============================================================
+// decimalToFraction — rounding strategies
+// ============================================================
+
+describe('decimalToFraction — rounding strategies', () => {
+  it('floor rounding gives result <= input', () => {
+    // 0.1 in 1/32nds = 3.2/32 → floor to 3/32
+    const r = decimalToFraction(0.1, 32, 'floor');
+    expect(r.num / r.den).toBeLessThanOrEqual(0.1);
+    expect(r).toEqual({ whole: 0, num: 3, den: 32 });
+  });
+
+  it('ceil rounding gives result >= input', () => {
+    // 0.1 in 1/32nds = 3.2/32 → ceil to 4/32 = 1/8
+    const r = decimalToFraction(0.1, 32, 'ceil');
+    expect(r.num / r.den).toBeGreaterThanOrEqual(0.1);
+    expect(r).toEqual({ whole: 0, num: 1, den: 8 });
+  });
+
+  it('math round picks closest', () => {
+    // 0.1 in 1/32nds = 3.2/32 → round to 3/32
+    const r = decimalToFraction(0.1, 32, 'round');
+    expect(r).toEqual({ whole: 0, num: 3, den: 32 });
+  });
+
+  it('math round rounds up when closer to next', () => {
+    // 0.15 in 1/32nds = 4.8/32 → round to 5/32
+    const r = decimalToFraction(0.15, 32, 'round');
+    expect(r).toEqual({ whole: 0, num: 5, den: 32 });
+  });
+
+  it('floor with exact fraction returns same', () => {
+    const r = decimalToFraction(0.5, 32, 'floor');
+    expect(r).toEqual({ whole: 0, num: 1, den: 2 });
+  });
+});
+
+// ============================================================
+// formatImperial — rounding strategies
+// ============================================================
+
+describe('formatImperial — rounding strategies', () => {
+  it('floor rounding rounds down', () => {
+    // 0.1 inches → floor at 1/32 = 3/32in
+    const mm = 0.1 * INCH_MM;
+    expect(formatImperial(mm, 32, false, 'floor')).toBe('3/32in');
+  });
+
+  it('ceil rounding rounds up', () => {
+    // 0.1 inches → ceil at 1/32 = 1/8in (4/32)
+    const mm = 0.1 * INCH_MM;
+    expect(formatImperial(mm, 32, false, 'ceil')).toBe('1/8in');
+  });
+
+  it('math round picks closest', () => {
+    // 0.1 inches → round at 1/32 = 3/32in (3.2 rounds to 3)
+    const mm = 0.1 * INCH_MM;
+    expect(formatImperial(mm, 32, false, 'round')).toBe('3/32in');
+  });
+
+  it('respects different precision denominators', () => {
+    const mm = 0.3 * INCH_MM;
+    // 0.3 at 1/8 = 2.4/8 → ceil = 3/8
+    expect(formatImperial(mm, 8, false, 'ceil')).toBe('3/8in');
+    // 0.3 at 1/8 = 2.4/8 → floor = 2/8 = 1/4
+    expect(formatImperial(mm, 8, false, 'floor')).toBe('1/4in');
+  });
+});
+
+// ============================================================
+// formatMetric — resolution & rounding
+// ============================================================
+
+describe('formatMetric — with resolution and rounding', () => {
+  it('formats with 1mm resolution in mm (0 decimals)', () => {
+    expect(formatMetric(32.7, mmUnit(), 1, 'round')).toBe('33mm');
+    expect(formatMetric(32.7, mmUnit(), 1, 'floor')).toBe('32mm');
+    expect(formatMetric(32.7, mmUnit(), 1, 'ceil')).toBe('33mm');
+  });
+
+  it('formats with 1mm resolution in cm (1 decimal)', () => {
+    expect(formatMetric(32.7, cmUnit(), 1, 'round')).toBe('3.3cm');
+    expect(formatMetric(32.7, cmUnit(), 1, 'floor')).toBe('3.2cm');
+    expect(formatMetric(32.7, cmUnit(), 1, 'ceil')).toBe('3.3cm');
+  });
+
+  it('formats with 1cm resolution in cm (0 decimals)', () => {
+    expect(formatMetric(32.7, cmUnit(), 10, 'round')).toBe('3cm');
+    expect(formatMetric(32.7, cmUnit(), 10, 'floor')).toBe('3cm');
+    expect(formatMetric(32.7, cmUnit(), 10, 'ceil')).toBe('4cm');
+  });
+
+  it('formats with 0.1mm resolution in mm (1 decimal)', () => {
+    expect(formatMetric(32.75, mmUnit(), 0.1, 'round')).toBe('32.8mm');
+    expect(formatMetric(32.75, mmUnit(), 0.1, 'floor')).toBe('32.7mm');
+    expect(formatMetric(32.75, mmUnit(), 0.1, 'ceil')).toBe('32.8mm');
+  });
+
+  it('formats with 0.01mm resolution in mm (2 decimals)', () => {
+    expect(formatMetric(32.756, mmUnit(), 0.01, 'round')).toBe('32.76mm');
+    expect(formatMetric(32.756, mmUnit(), 0.01, 'floor')).toBe('32.75mm');
+    expect(formatMetric(32.756, mmUnit(), 0.01, 'ceil')).toBe('32.76mm');
+  });
+
+  it('falls back to default behavior without resolution', () => {
+    expect(formatMetric(32.5, mmUnit())).toBe('32.5mm');
+  });
+});
+
+// ============================================================
+// formatDistanceWithSettings
+// ============================================================
+
+describe('formatDistanceWithSettings', () => {
+  const imperialSettings: DisplaySettings = {
+    unitSystem: 'imperial',
+    metricUnitSymbol: 'cm',
+    metricResolutionMm: 1,
+    imperialPrecision: 32,
+    roundingStrategy: 'ceil',
+  };
+
+  const metricSettings: DisplaySettings = {
+    unitSystem: 'metric',
+    metricUnitSymbol: 'cm',
+    metricResolutionMm: 1,
+    imperialPrecision: 32,
+    roundingStrategy: 'round',
+  };
+
+  it('formats imperial with settings', () => {
+    const mm = 5 * INCH_MM;
+    expect(formatDistanceWithSettings(mm, imperialSettings)).toBe('5in');
+  });
+
+  it('formats imperial with feet for large values', () => {
+    const mm = 2 * FOOT_MM + 6 * INCH_MM;
+    expect(formatDistanceWithSettings(mm, imperialSettings)).toBe('2ft 6in');
+  });
+
+  it('formats metric with cm and 1mm precision', () => {
+    expect(formatDistanceWithSettings(32.7, metricSettings)).toBe('3.3cm');
+  });
+
+  it('formats metric with mm unit', () => {
+    const settings: DisplaySettings = {
+      ...metricSettings,
+      metricUnitSymbol: 'mm',
+    };
+    expect(formatDistanceWithSettings(32.7, settings)).toBe('33mm');
+  });
+
+  it('respects rounding strategy in imperial', () => {
+    const mm = 0.1 * INCH_MM;
+    expect(
+      formatDistanceWithSettings(mm, { ...imperialSettings, roundingStrategy: 'floor' }),
+    ).toBe('3/32in');
+    expect(
+      formatDistanceWithSettings(mm, { ...imperialSettings, roundingStrategy: 'ceil' }),
+    ).toBe('1/8in');
+  });
+
+  it('respects rounding strategy in metric', () => {
+    expect(
+      formatDistanceWithSettings(32.7, { ...metricSettings, roundingStrategy: 'floor' }),
+    ).toBe('3.2cm');
+    expect(
+      formatDistanceWithSettings(32.7, { ...metricSettings, roundingStrategy: 'ceil' }),
+    ).toBe('3.3cm');
+  });
+
+  it('respects imperial precision setting', () => {
+    const mm = 0.3 * INCH_MM;
+    expect(
+      formatDistanceWithSettings(mm, { ...imperialSettings, imperialPrecision: 8 }),
+    ).toBe('3/8in');
+  });
+
+  it('respects metric resolution setting', () => {
+    expect(
+      formatDistanceWithSettings(32.7, { ...metricSettings, metricResolutionMm: 10 }),
+    ).toBe('3cm');
   });
 });

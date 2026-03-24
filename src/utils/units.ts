@@ -40,6 +40,30 @@ export const DISTANCE_UNITS: UnitConfig = {
   ],
 };
 
+// --- Rounding & display settings ---
+
+export type RoundingStrategy = 'ceil' | 'floor' | 'round';
+
+export interface DisplaySettings {
+  readonly unitSystem: 'imperial' | 'metric';
+  readonly metricUnitSymbol: 'mm' | 'cm' | 'dm' | 'm';
+  readonly metricResolutionMm: number;
+  readonly imperialPrecision: number;
+  readonly roundingStrategy: RoundingStrategy;
+}
+
+/**
+ * Compute the number of decimal places needed to display a metric value
+ * at the given resolution. E.g. resolution=1mm in cm → 1 decimal place.
+ */
+export function getMetricDecimalPlaces(
+  resolutionMm: number,
+  unit: UnitDefinition,
+): number {
+  const stepInUnit = resolutionMm / unit.toBase;
+  return Math.max(0, Math.ceil(-Math.log10(stepInUnit)));
+}
+
 // --- Helpers ---
 
 export function getBaseUnit(config: UnitConfig): UnitDefinition {

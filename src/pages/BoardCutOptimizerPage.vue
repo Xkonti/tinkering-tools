@@ -218,20 +218,8 @@
         </q-card>
       </div>
 
-      <!-- Computing indicator -->
-      <div v-if="isComputing" class="col-12">
-        <q-card>
-          <q-card-section class="text-center q-pa-lg">
-            <q-spinner-dots size="40px" color="primary" />
-            <div class="text-body1 text-grey-7 q-mt-sm">
-              Optimizing cut patterns...
-            </div>
-          </q-card-section>
-        </q-card>
-      </div>
-
       <!-- Results -->
-      <template v-if="result && !isComputing">
+      <template v-if="result">
         <!-- Unfulfilled warning -->
         <div v-if="result.unfulfilled.length > 0" class="col-12">
           <q-banner class="bg-orange-8 text-white rounded-borders">
@@ -440,7 +428,7 @@
       </template>
 
       <!-- Empty state -->
-      <div v-else-if="!isComputing" class="col-12">
+      <div v-else class="col-12">
         <q-card>
           <q-card-section class="text-center text-grey-5">
             Fill in stock inventory and required pieces to see optimized cut
@@ -453,13 +441,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
-import { watchDebounced } from '@vueuse/core';
 import { optimizeCuts } from 'src/utils/boardCutOptimizer';
 import type {
   CutOptimizerInput,
-  CutOptimizerResult,
   CutPattern,
   PlacedPiece,
   StockBoard,
@@ -537,26 +523,11 @@ function buildInput(): CutOptimizerInput | null {
   };
 }
 
-const input = computed(() => buildInput());
-const result = ref<CutOptimizerResult | null>(null);
-const isComputing = ref(false);
-
-watchDebounced(
-  input,
-  (newInput) => {
-    if (!newInput) {
-      result.value = null;
-      isComputing.value = false;
-      return;
-    }
-    isComputing.value = true;
-    setTimeout(() => {
-      result.value = optimizeCuts(newInput);
-      isComputing.value = false;
-    }, 10);
-  },
-  { debounce: 300, deep: true, immediate: true },
-);
+const result = computed(() => {
+  const inp = buildInput();
+  if (!inp) return null;
+  return optimizeCuts(inp);
+});
 
 const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
   if (!result.value) return [];

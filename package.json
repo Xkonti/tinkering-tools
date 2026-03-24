@@ -10,7 +10,7 @@
     "lint": "eslint -c ./eslint.config.js \"./src*/**/*.{ts,js,cjs,mjs,vue}\"",
     "format": "prettier --write \"**/*.{js,ts,vue,scss,html,md,json}\" --ignore-path .gitignore",
     "typecheck": "vue-tsc --noEmit",
-    "test": "echo \"No test specified\" && exit 0",
+    "test": "vitest run",
     "dev": "quasar dev",
     "build": "quasar build",
     "postinstall": "quasar prepare"
@@ -25,19 +25,20 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@quasar/app-vite": "^2.5.1",
+    "@types/node": "^22.19.11",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.7.0",
+    "autoprefixer": "^10.4.27",
     "eslint": "^10.0.3",
     "eslint-plugin-vue": "^10.8.0",
     "globals": "^17.4.0",
-    "vue-tsc": "^3.2.6",
-    "@vue/eslint-config-typescript": "^14.7.0",
-    "vite-plugin-checker": "^0.12.0",
-    "vue-eslint-parser": "^10.4.0",
-    "@vue/eslint-config-prettier": "^10.2.0",
     "prettier": "^3.8.1",
-    "@types/node": "^22.19.11",
-    "@quasar/app-vite": "^2.5.1",
-    "autoprefixer": "^10.4.27",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite-plugin-checker": "^0.12.0",
+    "vitest": "^4.1.1",
+    "vue-eslint-parser": "^10.4.0",
+    "vue-tsc": "^3.2.6"
   },
   "engines": {
     "node": "^28 || ^26 || ^24 || ^22.12",

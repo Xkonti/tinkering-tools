@@ -66,370 +66,206 @@ export interface CutOptimizerResult {
 }
 
 // ============================================================
-// Internal types for Branch & Bound algorithm
+// Internal types for FFD algorithm
 // ============================================================
 
-interface PieceType {
-  length: number;
-  demand: number;
-}
-
-interface PatternDef {
-  counts: number[];
-  numPieces: number;
-  remainder: number;
-  wasteRemainder: number;
-}
-
-interface BoardGroup {
+interface DemandItem {
   length: number;
   name?: string;
-  count: number;
-  boards: StockBoard[];
-  patterns: PatternDef[];
 }
 
-interface AllocEntry {
-  patternIdx: number;
-  count: number;
-}
-
-interface BnBSolution {
-  groupAllocations: AllocEntry[][];
-  unfulfilled: number;
-  waste: number;
-  consumedCost: number;
+interface OpenBoard {
+  stockBoard: StockBoard;
+  pieces: DemandItem[];
+  usedLength: number;
+  remainingCapacity: number;
 }
 
 // ============================================================
-// Phase 1: Pattern enumeration (bounded knapsack)
+// Phase 1: Expand demand & validate
 // ============================================================
 
-function enumeratePatterns(
-  boardLength: number,
-  pieceTypes: PieceType[],
-  kerf: number,
-  minUsefulRemnant: number,
-): PatternDef[] {
-  const patterns: PatternDef[] = [];
-  const counts = new Array<number>(pieceTypes.length).fill(0);
+function expandDemand(
+  requiredPieces: RequiredPiece[],
+  maxBoardLength: number,
+  typeName: string,
+): { demandItems: DemandItem[]; unfulfilled: UnfulfilledPiece[] } {
+  const demandItems: DemandItem[] = [];
+  const unfulfilled: UnfulfilledPiece[] = [];
 
-  function search(
-    pieceIdx: number,
-    totalPieceLen: number,
-    numPieces: number,
-  ): void {
-    if (numPieces > 0) {
-      const totalKerf = (numPieces - 1) * kerf;
-      const remainder = boardLength - totalPieceLen - totalKerf;
-      patterns.push({
-        counts: [...counts],
-        numPieces,
-        remainder,
-        wasteRemainder: remainder < minUsefulRemnant ? remainder : 0,
-      });
-    }
-
-    for (let i = pieceIdx; i < pieceTypes.length; i++) {
-      const pt = pieceTypes[i]!;
-      for (let qty = 1; qty <= pt.demand; qty++) {
-        const newPieceLen = totalPieceLen + qty * pt.length;
-        const newNum = numPieces + qty;
-        const newKerf = (newNum - 1) * kerf;
-        if (newPieceLen + newKerf > boardLength + 1e-9) break;
-
-        counts[i] = qty;
-        search(i + 1, newPieceLen, newNum);
-      }
-      counts[i] = 0;
-    }
-  }
-
-  search(0, 0, 0);
-  return patterns;
-}
-
-// ============================================================
-// Phase 2: Branch & Bound search
-// ============================================================
-
-function branchAndBound(
-  groups: BoardGroup[],
-  pieceTypes: PieceType[],
-): BnBSolution {
-  const numTypes = pieceTypes.length;
-  const totalDemand = pieceTypes.map((pt) => pt.demand);
-
-  // Precompute suffix max-capacity for pruning
-  // suffixCap[g][i] = max pieces of type i producible by groups g..end
-  const suffixCap: number[][] = new Array<number[]>(groups.length + 1);
-  suffixCap[groups.length] = new Array<number>(numTypes).fill(0);
-  for (let g = groups.length - 1; g >= 0; g--) {
-    const group = groups[g]!;
-    const maxPerType = new Array<number>(numTypes).fill(0);
-    for (const p of group.patterns) {
-      for (let i = 0; i < numTypes; i++) {
-        maxPerType[i] = Math.max(maxPerType[i]!, p.counts[i]!);
-      }
-    }
-    suffixCap[g] = suffixCap[g + 1]!.map(
-      (s, i) => s + maxPerType[i]! * group.count,
-    );
-  }
-
-  let best: BnBSolution = {
-    groupAllocations: groups.map(() => []),
-    unfulfilled: totalDemand.reduce((a, b) => a + b, 0),
-    waste: Infinity,
-    consumedCost: Infinity,
-  };
-
-  const startTime = Date.now();
-  const TIMEOUT_MS = 5000;
-  let timedOut = false;
-
-  const currentAllocs: AllocEntry[][] = groups.map(() => []);
-  const demand = [...totalDemand];
-
-  function isBetter(
-    unfulfilled: number,
-    waste: number,
-    cost: number,
-  ): boolean {
-    if (unfulfilled < best.unfulfilled) return true;
-    if (unfulfilled > best.unfulfilled) return false;
-    if (waste < best.waste - 1e-6) return true;
-    if (waste > best.waste + 1e-6) return false;
-    return cost < best.consumedCost - 1e-6;
-  }
-
-  function recordSolution(waste: number, cost: number): void {
-    let unfulfilled = 0;
-    for (let i = 0; i < numTypes; i++) {
-      unfulfilled += Math.max(0, demand[i]!);
-    }
-    if (isBetter(unfulfilled, waste, cost)) {
-      best = {
-        groupAllocations: currentAllocs.map((a) => [...a]),
-        unfulfilled,
-        waste,
-        consumedCost: cost,
+  for (const rp of requiredPieces) {
+    if (rp.length > maxBoardLength + 1e-9) {
+      const uf: UnfulfilledPiece = {
+        stockTypeName: typeName,
+        length: rp.length,
+        quantity: rp.quantity,
+        reason: 'No board long enough for this piece',
       };
+      if (rp.name) uf.name = rp.name;
+      unfulfilled.push(uf);
+      continue;
+    }
+    for (let i = 0; i < rp.quantity; i++) {
+      const item: DemandItem = { length: rp.length };
+      if (rp.name) item.name = rp.name;
+      demandItems.push(item);
     }
   }
 
-  function searchGroup(
-    groupIdx: number,
-    waste: number,
-    cost: number,
-  ): void {
-    if (timedOut) return;
-    if (Date.now() - startTime > TIMEOUT_MS) {
-      timedOut = true;
-      return;
+  // FFD: sort longest first
+  demandItems.sort((a, b) => b.length - a.length);
+  return { demandItems, unfulfilled };
+}
+
+// ============================================================
+// Phase 2: First Fit Decreasing placement
+// ============================================================
+
+function placeOnBoard(
+  board: OpenBoard,
+  item: DemandItem,
+  kerf: number,
+): void {
+  // Between-piece kerf (cut to separate from previous piece)
+  const betweenKerf = board.pieces.length > 0 ? kerf : 0;
+  board.pieces.push(item);
+  board.usedLength += betweenKerf + item.length;
+  board.remainingCapacity = board.stockBoard.length - board.usedLength;
+}
+
+function ffdPlace(
+  demandItems: DemandItem[],
+  boards: StockBoard[],
+  kerf: number,
+): { openBoards: OpenBoard[]; unfulfilled: DemandItem[] } {
+  const openBoards: OpenBoard[] = [];
+  // Sort available boards ascending by length (shortest first)
+  const unopened = [...boards].sort((a, b) => a.length - b.length);
+  const unfulfilled: DemandItem[] = [];
+
+  for (const item of demandItems) {
+    // 1. Try open boards — best fit (least remaining after placement)
+    let bestIdx = -1;
+    let bestRemaining = Infinity;
+
+    for (let i = 0; i < openBoards.length; i++) {
+      const board = openBoards[i]!;
+      const spaceNeeded =
+        item.length + (board.pieces.length > 0 ? kerf : 0);
+      if (spaceNeeded <= board.remainingCapacity + 1e-9) {
+        const remainingAfter = board.remainingCapacity - spaceNeeded;
+        if (remainingAfter < bestRemaining) {
+          bestRemaining = remainingAfter;
+          bestIdx = i;
+        }
+      }
     }
 
-    let remainingSum = 0;
-    for (let i = 0; i < numTypes; i++) {
-      remainingSum += Math.max(0, demand[i]!);
+    if (bestIdx >= 0) {
+      placeOnBoard(openBoards[bestIdx]!, item, kerf);
+      continue;
     }
 
-    if (remainingSum <= 0 || groupIdx >= groups.length) {
-      recordSolution(waste, cost);
-      return;
-    }
-
-    // Prune: can remaining groups fulfill all demand?
-    const cap = suffixCap[groupIdx]!;
-    let canFulfillAll = true;
-    for (let i = 0; i < numTypes; i++) {
-      if (demand[i]! > cap[i]!) {
-        canFulfillAll = false;
+    // 2. Open the shortest unopened board that fits
+    let opened = false;
+    for (let i = 0; i < unopened.length; i++) {
+      const sb = unopened[i]!;
+      if (item.length <= sb.length + 1e-9) {
+        const newBoard: OpenBoard = {
+          stockBoard: sb,
+          pieces: [],
+          usedLength: 0,
+          remainingCapacity: sb.length,
+        };
+        placeOnBoard(newBoard, item, kerf);
+        openBoards.push(newBoard);
+        unopened.splice(i, 1);
+        opened = true;
         break;
       }
     }
-    if (best.unfulfilled === 0 && !canFulfillAll) return;
 
-    // Prune: waste already >= best
-    if (best.unfulfilled === 0 && waste >= best.waste - 1e-6) return;
-
-    const group = groups[groupIdx]!;
-    currentAllocs[groupIdx] = [];
-    searchPattern(groupIdx, group, 0, group.count, waste, cost);
-  }
-
-  function searchPattern(
-    groupIdx: number,
-    group: BoardGroup,
-    patternIdx: number,
-    boardsLeft: number,
-    waste: number,
-    cost: number,
-  ): void {
-    if (timedOut) return;
-
-    if (patternIdx >= group.patterns.length) {
-      searchGroup(groupIdx + 1, waste, cost);
-      return;
-    }
-
-    const pattern = group.patterns[patternIdx]!;
-
-    // Max copies limited by boards and remaining demand
-    let maxUse = boardsLeft;
-    for (let i = 0; i < numTypes; i++) {
-      const pc = pattern.counts[i]!;
-      if (pc > 0) {
-        maxUse = Math.min(maxUse, Math.floor(demand[i]! / pc));
-      }
-    }
-
-    // Try from highest to lowest for better pruning
-    for (let use = maxUse; use >= 0; use--) {
-      const addedWaste = use * pattern.wasteRemainder;
-      const addedCost = use * group.length * group.length;
-      const newWaste = waste + addedWaste;
-      const newCost = cost + addedCost;
-
-      if (best.unfulfilled === 0 && newWaste >= best.waste - 1e-6) continue;
-
-      // Mutate demand in place (restore after)
-      for (let i = 0; i < numTypes; i++) {
-        demand[i]! -= use * pattern.counts[i]!;
-      }
-
-      if (use > 0) {
-        currentAllocs[groupIdx]!.push({ patternIdx, count: use });
-      }
-
-      searchPattern(
-        groupIdx,
-        group,
-        patternIdx + 1,
-        boardsLeft - use,
-        newWaste,
-        newCost,
-      );
-
-      if (use > 0) {
-        currentAllocs[groupIdx]!.pop();
-      }
-
-      // Restore demand
-      for (let i = 0; i < numTypes; i++) {
-        demand[i]! += use * pattern.counts[i]!;
-      }
+    if (!opened) {
+      unfulfilled.push(item);
     }
   }
 
-  searchGroup(0, 0, 0);
-  return best;
+  return { openBoards, unfulfilled };
 }
 
 // ============================================================
-// Result construction
+// Phase 3: Build output
 // ============================================================
-
-interface Fulfillment {
-  rp: RequiredPiece;
-  remaining: number;
-}
 
 function buildCutPatterns(
-  solution: BnBSolution,
-  groups: BoardGroup[],
-  pieceTypes: PieceType[],
-  requiredPieces: RequiredPiece[],
-  typeName: string,
+  openBoards: OpenBoard[],
   kerf: number,
   minUsefulRemnant: number,
-): { patterns: CutPattern[]; unfulfilled: UnfulfilledPiece[] } {
-  const cutPatterns: CutPattern[] = [];
+): CutPattern[] {
+  const patterns: CutPattern[] = [];
 
-  // Track fulfillment per original RequiredPiece for name assignment
-  const fulfillments: Fulfillment[] = requiredPieces.map((rp) => ({
-    rp,
-    remaining: rp.quantity,
-  }));
-  const fulfillmentsByLength = new Map<number, Fulfillment[]>();
-  for (const f of fulfillments) {
-    const list = fulfillmentsByLength.get(f.rp.length) ?? [];
-    list.push(f);
-    fulfillmentsByLength.set(f.rp.length, list);
-  }
+  for (const board of openBoards) {
+    const placedPieces: PlacedPiece[] = [];
+    let offset = 0;
 
-  function consumePieceName(length: number): string | undefined {
-    const list = fulfillmentsByLength.get(length);
-    if (!list) return undefined;
-    for (const f of list) {
-      if (f.remaining > 0) {
-        f.remaining--;
-        return f.rp.name;
-      }
+    for (let i = 0; i < board.pieces.length; i++) {
+      const item = board.pieces[i]!;
+      if (i > 0) offset += kerf;
+
+      const piece: PlacedPiece = {
+        length: item.length,
+        startOffset: offset,
+      };
+      if (item.name) piece.name = item.name;
+      placedPieces.push(piece);
+      offset += item.length;
     }
-    return undefined;
+
+    const n = placedPieces.length;
+    const piecesLen = placedPieces.reduce((s, p) => s + p.length, 0);
+    const betweenKerf = Math.max(0, n - 1) * kerf;
+    // Trailing kerf (trim cut after last piece) only if enough board remains
+    const rawRemainder = board.stockBoard.length - piecesLen - betweenKerf;
+    const trailingKerf = rawRemainder >= kerf ? kerf : 0;
+    const totalKerf = betweenKerf + trailingKerf;
+    const remainder = board.stockBoard.length - piecesLen - totalKerf;
+
+    patterns.push({
+      stockBoard: board.stockBoard,
+      pieces: placedPieces,
+      totalKerf,
+      remainder,
+      remainderIsUsable: remainder >= minUsefulRemnant,
+    });
   }
 
-  for (let g = 0; g < groups.length; g++) {
-    const group = groups[g]!;
-    const allocs = solution.groupAllocations[g] ?? [];
-    let boardIdx = 0;
+  return patterns;
+}
 
-    for (const alloc of allocs) {
-      const pattern = group.patterns[alloc.patternIdx]!;
+function aggregateUnfulfilled(
+  items: DemandItem[],
+  typeName: string,
+): UnfulfilledPiece[] {
+  const groups = new Map<string, UnfulfilledPiece>();
 
-      for (let c = 0; c < alloc.count; c++) {
-        const board = group.boards[boardIdx++]!;
-        const pieces: PlacedPiece[] = [];
-        let offset = 0;
-
-        for (let i = 0; i < pieceTypes.length; i++) {
-          const pt = pieceTypes[i]!;
-          const cnt = pattern.counts[i]!;
-          for (let j = 0; j < cnt; j++) {
-            if (pieces.length > 0) offset += kerf;
-            const pieceName = consumePieceName(pt.length);
-            const piece: PlacedPiece = {
-              length: pt.length,
-              startOffset: offset,
-            };
-            if (pieceName) piece.name = pieceName;
-            pieces.push(piece);
-            offset += pt.length;
-          }
-        }
-
-        const totalKerf = Math.max(0, pieces.length - 1) * kerf;
-        const piecesLen = pieces.reduce((s, p) => s + p.length, 0);
-        const remainder = board.length - piecesLen - totalKerf;
-
-        cutPatterns.push({
-          stockBoard: board,
-          pieces,
-          totalKerf,
-          remainder,
-          remainderIsUsable: remainder >= minUsefulRemnant,
-        });
-      }
-    }
-  }
-
-  // Build unfulfilled from remaining fulfillments
-  const unfulfilled: UnfulfilledPiece[] = [];
-  for (const f of fulfillments) {
-    if (f.remaining > 0) {
+  for (const item of items) {
+    const key = `${String(item.length)}|${item.name ?? ''}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.quantity++;
+    } else {
       const uf: UnfulfilledPiece = {
         stockTypeName: typeName,
-        length: f.rp.length,
-        quantity: f.remaining,
+        length: item.length,
+        quantity: 1,
         reason: 'Not enough stock available',
       };
-      if (f.rp.name) uf.name = f.rp.name;
-      unfulfilled.push(uf);
+      if (item.name) uf.name = item.name;
+      groups.set(key, uf);
     }
   }
 
-  return { patterns: cutPatterns, unfulfilled };
+  return [...groups.values()];
 }
 
 // ============================================================
@@ -443,65 +279,41 @@ function solveForType(
   kerf: number,
   minUsefulRemnant: number,
 ): { patterns: CutPattern[]; unfulfilled: UnfulfilledPiece[] } {
-  // 1. Merge required pieces by length into PieceTypes
-  const lengthMap = new Map<number, number>();
-  for (const rp of requiredPieces) {
-    lengthMap.set(rp.length, (lengthMap.get(rp.length) ?? 0) + rp.quantity);
-  }
-  const pieceTypes: PieceType[] = [...lengthMap.entries()]
-    .map(([length, demand]) => ({ length, demand }))
-    .sort((a, b) => b.length - a.length);
-
-  if (pieceTypes.length === 0) {
+  if (requiredPieces.length === 0) {
     return { patterns: [], unfulfilled: [] };
   }
 
-  // 2. Group boards by (length, name), sorted ascending by length
-  const groupMap = new Map<string, BoardGroup>();
-  for (const board of boards) {
-    const key = `${String(board.length)}|${board.name ?? ''}`;
-    const existing = groupMap.get(key);
-    if (existing) {
-      existing.count++;
-      existing.boards.push(board);
-    } else {
-      const group: BoardGroup = {
-        length: board.length,
-        count: 1,
-        boards: [board],
-        patterns: [],
-      };
-      if (board.name) group.name = board.name;
-      groupMap.set(key, group);
-    }
-  }
-  const groups = [...groupMap.values()].sort((a, b) => a.length - b.length);
-
-  // 3. Enumerate patterns per group
-  for (const group of groups) {
-    group.patterns = enumeratePatterns(
-      group.length,
-      pieceTypes,
-      kerf,
-      minUsefulRemnant,
-    );
-    // Sort: most pieces first for better B&B pruning
-    group.patterns.sort((a, b) => b.numPieces - a.numPieces);
-  }
-
-  // 4. Branch & Bound
-  const solution = branchAndBound(groups, pieceTypes);
-
-  // 5. Build output
-  return buildCutPatterns(
-    solution,
-    groups,
-    pieceTypes,
-    requiredPieces,
-    typeName,
-    kerf,
-    minUsefulRemnant,
+  const maxBoardLength = boards.reduce(
+    (max, b) => Math.max(max, b.length),
+    0,
   );
+
+  // Phase 1: Expand demand items and filter oversized pieces
+  const { demandItems, unfulfilled: earlyUnfulfilled } = expandDemand(
+    requiredPieces,
+    maxBoardLength,
+    typeName,
+  );
+
+  if (demandItems.length === 0) {
+    return { patterns: [], unfulfilled: earlyUnfulfilled };
+  }
+
+  // Phase 2: FFD placement
+  const { openBoards, unfulfilled: ffdUnfulfilled } = ffdPlace(
+    demandItems,
+    boards,
+    kerf,
+  );
+
+  // Phase 3: Build output
+  const patterns = buildCutPatterns(openBoards, kerf, minUsefulRemnant);
+  const unfulfilled = [
+    ...earlyUnfulfilled,
+    ...aggregateUnfulfilled(ffdUnfulfilled, typeName),
+  ];
+
+  return { patterns, unfulfilled };
 }
 
 // ============================================================

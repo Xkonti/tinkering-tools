@@ -8,24 +8,29 @@
             <div class="text-h6 q-mb-md">Settings</div>
             <div class="row q-col-gutter-md">
               <div class="col-6">
-                <q-input
-                  v-model.number="kerf"
-                  type="number"
+                <DistanceInput
+                  v-model="kerf"
                   outlined
                   label="Kerf (blade thickness)"
-                  suffix="in"
-                  step="0.0625"
-                  min="0"
                 />
               </div>
               <div class="col-6">
-                <q-input
-                  v-model.number="minUsefulRemnant"
-                  type="number"
+                <DistanceInput
+                  v-model="minUsefulRemnant"
                   outlined
                   label="Min useful remnant"
-                  suffix="in"
-                  min="0"
+                />
+              </div>
+              <div class="col-12">
+                <q-btn-toggle
+                  v-model="displayUnitKey"
+                  no-caps
+                  rounded
+                  toggle-color="primary"
+                  :options="[
+                    { label: 'Imperial (in)', value: 'in' },
+                    { label: 'Metric (mm)', value: 'mm' },
+                  ]"
                 />
               </div>
             </div>
@@ -76,14 +81,11 @@
                   class="row items-center q-col-gutter-sm q-mb-xs"
                 >
                   <div class="col">
-                    <q-input
-                      v-model.number="board.length"
-                      type="number"
+                    <DistanceInput
+                      v-model="board.length"
                       outlined
                       dense
                       label="Board length"
-                      suffix="in"
-                      min="0"
                     />
                   </div>
                   <div class="col">
@@ -164,14 +166,11 @@
                 />
               </div>
               <div class="col">
-                <q-input
-                  v-model.number="piece.length"
-                  type="number"
+                <DistanceInput
+                  v-model="piece.length"
                   outlined
                   dense
                   label="Piece length"
-                  suffix="in"
-                  min="0"
                 />
               </div>
               <div class="col">
@@ -231,7 +230,7 @@
             </div>
             <ul class="q-mb-none q-mt-xs">
               <li v-for="(uf, idx) in result.unfulfilled" :key="idx">
-                {{ uf.quantity }}&times; {{ uf.length }}&quot;
+                {{ uf.quantity }}&times; {{ fmtDist(uf.length) }}
                 {{ uf.stockTypeName }}{{ uf.name ? ' (' + uf.name + ')' : '' }}
                 &mdash; {{ uf.reason }}
               </li>
@@ -262,13 +261,13 @@
                     Preserved Stock
                   </div>
                   <div class="text-h5 text-positive">
-                    {{ result.summary.preservedStockLength.toFixed(1) }}&quot;
+                    {{ fmtDist(result.summary.preservedStockLength) }}
                   </div>
                 </div>
                 <div class="col-6 col-md-2">
                   <div class="text-subtitle2 text-grey-7">Waste</div>
                   <div class="text-h5 text-negative">
-                    {{ result.summary.totalWaste.toFixed(2) }}&quot;
+                    {{ fmtDist(result.summary.totalWaste) }}
                   </div>
                 </div>
                 <div class="col-6 col-md-3">
@@ -276,7 +275,7 @@
                     Usable Remnants
                   </div>
                   <div class="text-h5 text-warning">
-                    {{ result.summary.usableRemnants.toFixed(2) }}&quot;
+                    {{ fmtDist(result.summary.usableRemnants) }}
                   </div>
                 </div>
               </div>
@@ -301,7 +300,7 @@
               >
                 <div class="text-subtitle2 q-mb-xs">
                   Board #{{ pIdx + 1 }}
-                  ({{ pattern.stockBoard.length }}&quot;){{
+                  ({{ fmtDist(pattern.stockBoard.length) }}){{
                     pattern.stockBoard.name
                       ? ' — ' + pattern.stockBoard.name
                       : ''
@@ -350,7 +349,8 @@
                         {{ pieceLabel(piece) }}
                       </span>
                       <q-tooltip>
-                        {{ piece.length }}&quot;{{
+                        {{ fmtDist(piece.length)
+                        }}{{
                           piece.name ? ' — ' + piece.name : ''
                         }}
                       </q-tooltip>
@@ -398,11 +398,11 @@
                         whiteSpace: 'nowrap',
                       }"
                     >
-                      {{ pattern.remainder.toFixed(1) }}&quot;
+                      {{ fmtDist(pattern.remainder) }}
                       {{ pattern.remainderIsUsable ? 'usable' : 'waste' }}
                     </span>
                     <q-tooltip>
-                      {{ pattern.remainder.toFixed(2) }}&quot; —
+                      {{ fmtDist(pattern.remainder) }} —
                       {{ pattern.remainderIsUsable ? 'Usable remnant' : 'Waste' }}
                     </q-tooltip>
                   </div>
@@ -413,12 +413,15 @@
                   Pieces:
                   {{
                     pattern.pieces
-                      .map((p) => (p.name ? p.name + ' ' : '') + p.length + '"')
+                      .map(
+                        (p) =>
+                          (p.name ? p.name + ' ' : '') + fmtDist(p.length),
+                      )
                       .join(', ')
                   }}
-                  &nbsp;|&nbsp; Kerf: {{ pattern.totalKerf.toFixed(3) }}&quot;
+                  &nbsp;|&nbsp; Kerf: {{ fmtDist(pattern.totalKerf) }}
                   &nbsp;|&nbsp; Remainder:
-                  {{ pattern.remainder.toFixed(2) }}&quot;
+                  {{ fmtDist(pattern.remainder) }}
                   ({{ pattern.remainderIsUsable ? 'usable' : 'waste' }})
                 </div>
               </div>
@@ -442,6 +445,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useLocalStorage } from '@vueuse/core';
 import { storeToRefs } from 'pinia';
 import { optimizeCuts } from 'src/utils/boardCutOptimizer';
 import type {
@@ -452,6 +456,10 @@ import type {
   StockBoard,
 } from 'src/utils/boardCutOptimizer';
 import { useBoardCutOptimizerStore } from 'src/stores/boardCutOptimizer';
+import { formatDistance } from 'src/utils/unitParsing';
+import { DISTANCE_UNITS } from 'src/utils/units';
+import type { UnitDefinition } from 'src/utils/units';
+import DistanceInput from 'src/components/DistanceInput.vue';
 
 const store = useBoardCutOptimizerStore();
 const {
@@ -469,6 +477,24 @@ const {
   addRequiredPiece,
   removeRequiredPiece,
 } = store;
+
+// --- Display unit toggle ---
+
+const displayUnitKey = useLocalStorage<string>(
+  'tinkering-tools:board-cut-optimizer:v2:displayUnit',
+  'in',
+);
+
+const displayUnit = computed<UnitDefinition>(() => {
+  const found = DISTANCE_UNITS.units.find(
+    (u) => u.symbol === displayUnitKey.value,
+  );
+  return found ?? DISTANCE_UNITS.units[0];
+});
+
+function fmtDist(mm: number): string {
+  return formatDistance(mm, displayUnit.value);
+}
 
 // --- Optimization ---
 
@@ -555,14 +581,13 @@ const PIECE_COLORS = [
 ];
 
 function pieceColor(length: number): string {
-  // Deterministic color based on piece length
   const hash = Math.round(length * 1000);
   return PIECE_COLORS[hash % PIECE_COLORS.length] ?? PIECE_COLORS[0]!;
 }
 
 function pieceLabel(piece: PlacedPiece): string {
-  if (piece.name) return `${piece.name} ${String(piece.length)}"`;
-  return `${String(piece.length)}"`;
+  if (piece.name) return `${piece.name} ${fmtDist(piece.length)}`;
+  return fmtDist(piece.length);
 }
 
 function toPercent(value: number, total: number): number {

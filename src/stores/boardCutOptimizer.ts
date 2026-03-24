@@ -21,15 +21,15 @@ export interface RequiredPieceInput {
   name: string;
 }
 
-const STORAGE_KEY = 'tinkering-tools:board-cut-optimizer';
+const STORAGE_KEY = 'tinkering-tools:board-cut-optimizer:v2';
 
 export const useBoardCutOptimizerStore = defineStore(
   'boardCutOptimizer',
   () => {
-    const kerf = useLocalStorage<number>(`${STORAGE_KEY}:kerf`, 0.125);
+    const kerf = useLocalStorage<number>(`${STORAGE_KEY}:kerf`, 3.175);
     const minUsefulRemnant = useLocalStorage<number>(
       `${STORAGE_KEY}:minUsefulRemnant`,
-      10,
+      254,
     );
 
     const stockTypes = useLocalStorage<StockTypeInput[]>(
@@ -38,7 +38,7 @@ export const useBoardCutOptimizerStore = defineStore(
         {
           id: crypto.randomUUID(),
           name: '2x4',
-          boards: [{ id: crypto.randomUUID(), length: 96, quantity: 10, name: '' }],
+          boards: [{ id: crypto.randomUUID(), length: 2438.4, quantity: 10, name: '' }],
         },
       ],
     );
@@ -49,7 +49,7 @@ export const useBoardCutOptimizerStore = defineStore(
         {
           id: crypto.randomUUID(),
           stockTypeName: '2x4',
-          length: 24,
+          length: 609.6,
           quantity: 10,
           name: '',
         },

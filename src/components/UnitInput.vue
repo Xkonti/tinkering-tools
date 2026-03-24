@@ -15,10 +15,11 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import type { UnitConfig, UnitDefinition } from 'src/utils/units';
-import { findUnitByAlias, getBaseUnit } from 'src/utils/units';
+import type { DisplaySettings, UnitConfig, UnitDefinition } from 'src/utils/units';
+import { DISTANCE_UNITS, findUnitByAlias, getBaseUnit } from 'src/utils/units';
 import {
   formatDistance,
+  formatDistanceWithSettings,
   isValidPartialInput,
   parseUnitInput,
 } from 'src/utils/unitParsing';
@@ -26,6 +27,7 @@ import {
 const props = defineProps<{
   modelValue: number | null;
   unitConfig: UnitConfig;
+  displaySettings?: DisplaySettings | undefined;
   label?: string | undefined;
   dense?: boolean | undefined;
   outlined?: boolean | undefined;
@@ -43,17 +45,30 @@ const hasError = ref(false);
 const errorMessage = ref('');
 
 function getDisplayUnit(): UnitDefinition {
+  if (props.displaySettings) {
+    if (props.displaySettings.unitSystem === 'imperial') {
+      return DISTANCE_UNITS.units.find((u) => u.symbol === 'in')!;
+    }
+    return (
+      DISTANCE_UNITS.units.find(
+        (u) => u.symbol === props.displaySettings!.metricUnitSymbol,
+      ) ?? DISTANCE_UNITS.units[0]
+    );
+  }
   return lastUsedUnit.value ?? getBaseUnit(props.unitConfig);
 }
 
 function formatValue(baseValue: number): string {
+  if (props.displaySettings) {
+    return formatDistanceWithSettings(baseValue, props.displaySettings);
+  }
   return formatDistance(baseValue, getDisplayUnit());
 }
 
-// Sync displayText when modelValue changes externally
+// Sync displayText when modelValue or displaySettings change externally
 watch(
-  () => props.modelValue,
-  (newVal) => {
+  [() => props.modelValue, () => props.displaySettings],
+  ([newVal]) => {
     if (isFocused.value) return;
     if (newVal === null || newVal === undefined) {
       displayText.value = '';
@@ -61,7 +76,7 @@ watch(
     }
     displayText.value = formatValue(newVal);
   },
-  { immediate: true },
+  { immediate: true, deep: true },
 );
 
 function onInput(value: string | number | null) {
@@ -110,7 +125,7 @@ function onBlur() {
       lastUsedUnit.value = unit;
     }
     // Reformat to clean display
-    displayText.value = formatDistance(parsed.baseValue, getDisplayUnit());
+    displayText.value = formatValue(parsed.baseValue);
     hasError.value = false;
     errorMessage.value = '';
   } else {

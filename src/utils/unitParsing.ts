@@ -1,5 +1,16 @@
-import type { UnitConfig, UnitDefinition } from './units';
-import { convertFromBase, convertToBase, findUnitByAlias } from './units';
+import type {
+  DisplaySettings,
+  RoundingStrategy,
+  UnitConfig,
+  UnitDefinition,
+} from './units';
+import {
+  DISTANCE_UNITS,
+  convertFromBase,
+  convertToBase,
+  findUnitByAlias,
+  getMetricDecimalPlaces,
+} from './units';
 
 // ============================================================
 // Fraction arithmetic
@@ -27,23 +38,30 @@ export function parseFraction(s: string): number | null {
 }
 
 /**
- * Convert a decimal value to a mixed number with ceil rounding.
+ * Convert a decimal value to a mixed number.
  * decimalToFraction(1.1875, 32) → { whole: 1, num: 3, den: 16 }
- * Uses ceil so the result is always >= the input (safe for woodworking).
+ * Rounding defaults to ceil (result >= input, safe for woodworking).
  */
 export function decimalToFraction(
   value: number,
   maxDenom: number,
+  rounding: RoundingStrategy = 'ceil',
 ): { whole: number; num: number; den: number } {
   if (value < 0) {
-    const r = decimalToFraction(-value, maxDenom);
+    const r = decimalToFraction(-value, maxDenom, rounding);
     return { whole: -r.whole, num: r.num, den: r.den };
   }
 
   const whole = Math.floor(value);
   const frac = value - whole;
 
-  const numerator = Math.ceil(frac * maxDenom);
+  const roundFn =
+    rounding === 'ceil'
+      ? Math.ceil
+      : rounding === 'floor'
+        ? Math.floor
+        : Math.round;
+  const numerator = roundFn(frac * maxDenom);
 
   if (numerator >= maxDenom) {
     return { whole: whole + 1, num: 0, den: 1 };
@@ -262,12 +280,13 @@ export function parseUnitInput(
 /**
  * Format a base value (mm) as an imperial string.
  * Uses feet + inches when the value is >= 1 foot, otherwise just inches.
- * Fractions are ceil-rounded to 1/precision.
+ * Fractions are rounded to 1/precision using the given rounding strategy.
  */
 export function formatImperial(
   baseMm: number,
   precision: number,
   preferFeet: boolean,
+  rounding: RoundingStrategy = 'ceil',
 ): string {
   const totalInches = baseMm / INCH_TO_MM;
 
@@ -277,7 +296,7 @@ export function formatImperial(
     let remainingInches = totalInches - feetWhole * 12;
     // Snap near-zero to zero to avoid floating-point artifacts
     if (Math.abs(remainingInches) < 1e-9) remainingInches = 0;
-    const { whole, num, den } = decimalToFraction(remainingInches, precision);
+    const { whole, num, den } = decimalToFraction(remainingInches, precision, rounding);
 
     const parts: string[] = [`${String(feetWhole)}ft`];
     if (whole > 0 && num > 0) {
@@ -291,7 +310,7 @@ export function formatImperial(
   }
 
   // Inches only
-  const { whole, num, den } = decimalToFraction(totalInches, precision);
+  const { whole, num, den } = decimalToFraction(totalInches, precision, rounding);
   if (whole > 0 && num > 0) {
     return `${String(whole)} ${String(num)}/${String(den)}in`;
   }
@@ -306,15 +325,32 @@ export function formatImperial(
 
 /**
  * Format a base value (mm) as a metric string.
- * Strips trailing zeros, max 4 decimal places.
+ * When resolutionMm is provided, snaps to that resolution using the rounding strategy.
+ * Otherwise falls back to 4 decimal places with trailing zeros stripped.
  */
 export function formatMetric(
   baseMm: number,
   unit: UnitDefinition,
+  resolutionMm?: number,
+  rounding?: RoundingStrategy,
 ): string {
-  const value = convertFromBase(baseMm, unit);
-  // Use up to 4 decimal places, strip trailing zeros
-  const formatted = parseFloat(value.toFixed(4));
+  const raw = convertFromBase(baseMm, unit);
+
+  if (resolutionMm !== undefined) {
+    const step = resolutionMm / unit.toBase;
+    const roundFn =
+      (rounding ?? 'ceil') === 'ceil'
+        ? Math.ceil
+        : (rounding ?? 'ceil') === 'floor'
+          ? Math.floor
+          : Math.round;
+    const snapped = roundFn(raw / step) * step;
+    const decimals = getMetricDecimalPlaces(resolutionMm, unit);
+    return `${snapped.toFixed(decimals)}${unit.symbol}`;
+  }
+
+  // Fallback: up to 4 decimal places, strip trailing zeros
+  const formatted = parseFloat(raw.toFixed(4));
   return `${String(formatted)}${unit.symbol}`;
 }
 
@@ -332,6 +368,37 @@ export function formatDistance(
     return formatImperial(baseMm, precision, preferFeet);
   }
   return formatMetric(baseMm, unit);
+}
+
+/**
+ * Format a base value (mm) using full display settings.
+ * Resolves the correct unit and applies precision/rounding.
+ */
+export function formatDistanceWithSettings(
+  baseMm: number,
+  settings: DisplaySettings,
+): string {
+  if (settings.unitSystem === 'imperial') {
+    return formatImperial(
+      baseMm,
+      settings.imperialPrecision,
+      true,
+      settings.roundingStrategy,
+    );
+  }
+
+  const unit = DISTANCE_UNITS.units.find(
+    (u) => u.symbol === settings.metricUnitSymbol,
+  );
+  if (!unit) {
+    return formatMetric(baseMm, DISTANCE_UNITS.units[0]);
+  }
+  return formatMetric(
+    baseMm,
+    unit,
+    settings.metricResolutionMm,
+    settings.roundingStrategy,
+  );
 }
 
 // ============================================================

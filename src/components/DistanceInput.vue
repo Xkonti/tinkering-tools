@@ -2,6 +2,7 @@
   <UnitInput
     :model-value="modelValue"
     :unit-config="DISTANCE_UNITS"
+    :display-settings="displaySettings"
     :label="label"
     :dense="dense"
     :outlined="outlined"
@@ -12,10 +13,12 @@
 
 <script setup lang="ts">
 import UnitInput from './UnitInput.vue';
+import type { DisplaySettings } from 'src/utils/units';
 import { DISTANCE_UNITS } from 'src/utils/units';
 
 defineProps<{
   modelValue: number | null;
+  displaySettings?: DisplaySettings | undefined;
   label?: string | undefined;
   dense?: boolean | undefined;
   outlined?: boolean | undefined;

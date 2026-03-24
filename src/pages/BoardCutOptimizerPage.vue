@@ -10,6 +10,7 @@
               <div class="col-6">
                 <DistanceInput
                   v-model="kerf"
+                  :display-settings="dsSettings"
                   outlined
                   label="Kerf (blade thickness)"
                 />
@@ -17,20 +18,71 @@
               <div class="col-6">
                 <DistanceInput
                   v-model="minUsefulRemnant"
+                  :display-settings="dsSettings"
                   outlined
                   label="Min useful remnant"
                 />
               </div>
               <div class="col-12">
                 <q-btn-toggle
-                  v-model="displayUnitKey"
+                  v-model="unitSystem"
                   no-caps
                   rounded
                   toggle-color="primary"
                   :options="[
-                    { label: 'Imperial (in)', value: 'in' },
-                    { label: 'Metric (mm)', value: 'mm' },
+                    { label: 'Imperial', value: 'imperial' },
+                    { label: 'Metric', value: 'metric' },
                   ]"
+                />
+              </div>
+              <template
+                v-if="unitSystem === 'metric'"
+              >
+                <div class="col-6">
+                  <q-select
+                    v-model="metricUnitSymbol"
+                    :options="metricUnitOptions"
+                    outlined
+                    dense
+                    emit-value
+                    map-options
+                    label="Display unit"
+                  />
+                </div>
+                <div class="col-6">
+                  <q-select
+                    v-model="metricResolutionMm"
+                    :options="metricPrecisionOptions"
+                    outlined
+                    dense
+                    emit-value
+                    map-options
+                    label="Precision"
+                  />
+                </div>
+              </template>
+              <template v-else>
+                <div class="col-6">
+                  <q-select
+                    v-model="imperialPrecision"
+                    :options="imperialPrecisionOptions"
+                    outlined
+                    dense
+                    emit-value
+                    map-options
+                    label="Precision"
+                  />
+                </div>
+              </template>
+              <div class="col-12 col-sm-6">
+                <q-select
+                  v-model="roundingStrategy"
+                  :options="roundingOptions"
+                  outlined
+                  dense
+                  emit-value
+                  map-options
+                  label="Rounding"
                 />
               </div>
             </div>
@@ -83,6 +135,7 @@
                   <div class="col">
                     <DistanceInput
                       v-model="board.length"
+                      :display-settings="dsSettings"
                       outlined
                       dense
                       label="Board length"
@@ -168,6 +221,7 @@
               <div class="col">
                 <DistanceInput
                   v-model="piece.length"
+                  :display-settings="dsSettings"
                   outlined
                   dense
                   label="Piece length"
@@ -445,7 +499,6 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { useLocalStorage } from '@vueuse/core';
 import { storeToRefs } from 'pinia';
 import { optimizeCuts } from 'src/utils/boardCutOptimizer';
 import type {
@@ -456,9 +509,8 @@ import type {
   StockBoard,
 } from 'src/utils/boardCutOptimizer';
 import { useBoardCutOptimizerStore } from 'src/stores/boardCutOptimizer';
-import { formatDistance } from 'src/utils/unitParsing';
-import { DISTANCE_UNITS } from 'src/utils/units';
-import type { UnitDefinition } from 'src/utils/units';
+import { useDisplaySettingsStore } from 'src/stores/displaySettings';
+import { formatDistanceWithSettings } from 'src/utils/unitParsing';
 import DistanceInput from 'src/components/DistanceInput.vue';
 
 const store = useBoardCutOptimizerStore();
@@ -478,22 +530,49 @@ const {
   removeRequiredPiece,
 } = store;
 
-// --- Display unit toggle ---
+// --- Display settings ---
 
-const displayUnitKey = useLocalStorage<string>(
-  'tinkering-tools:board-cut-optimizer:v2:displayUnit',
-  'in',
-);
+const displaySettingsStore = useDisplaySettingsStore();
+const {
+  unitSystem,
+  metricUnitSymbol,
+  metricResolutionMm,
+  imperialPrecision,
+  roundingStrategy,
+  settings: dsSettings,
+} = storeToRefs(displaySettingsStore);
 
-const displayUnit = computed<UnitDefinition>(() => {
-  const found = DISTANCE_UNITS.units.find(
-    (u) => u.symbol === displayUnitKey.value,
-  );
-  return found ?? DISTANCE_UNITS.units[0];
-});
+const metricUnitOptions = [
+  { label: 'mm', value: 'mm' },
+  { label: 'cm', value: 'cm' },
+  { label: 'dm', value: 'dm' },
+  { label: 'm', value: 'm' },
+];
+
+const metricPrecisionOptions = [
+  { label: '1cm', value: 10 },
+  { label: '1mm', value: 1 },
+  { label: '0.1mm', value: 0.1 },
+  { label: '0.01mm', value: 0.01 },
+];
+
+const imperialPrecisionOptions = [
+  { label: '1/4"', value: 4 },
+  { label: '1/8"', value: 8 },
+  { label: '1/16"', value: 16 },
+  { label: '1/32"', value: 32 },
+  { label: '1/64"', value: 64 },
+  { label: '1/128"', value: 128 },
+];
+
+const roundingOptions = [
+  { label: 'Round up (ceil) — always longer', value: 'ceil' },
+  { label: 'Round down (floor) — always shorter', value: 'floor' },
+  { label: 'Mathematical round', value: 'round' },
+];
 
 function fmtDist(mm: number): string {
-  return formatDistance(mm, displayUnit.value);
+  return formatDistanceWithSettings(mm, dsSettings.value);
 }
 
 // --- Optimization ---

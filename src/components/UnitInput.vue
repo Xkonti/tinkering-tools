@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { DisplaySettings, UnitConfig, UnitDefinition } from 'src/utils/units';
 import { DISTANCE_UNITS, findUnitByAlias, getBaseUnit } from 'src/utils/units';
 import {
@@ -65,18 +65,20 @@ function formatValue(baseValue: number): string {
   return formatDistance(baseValue, getDisplayUnit());
 }
 
-// Sync displayText when modelValue or displaySettings change externally
+// Computed formatted string — tracks both modelValue and displaySettings reactively
+const formattedDisplay = computed(() => {
+  if (props.modelValue === null || props.modelValue === undefined) return '';
+  return formatValue(props.modelValue);
+});
+
+// Sync displayText when the formatted display changes externally
 watch(
-  [() => props.modelValue, () => props.displaySettings],
-  ([newVal]) => {
+  formattedDisplay,
+  (newFormatted) => {
     if (isFocused.value) return;
-    if (newVal === null || newVal === undefined) {
-      displayText.value = '';
-      return;
-    }
-    displayText.value = formatValue(newVal);
+    displayText.value = newFormatted;
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 );
 
 function onInput(value: string | number | null) {

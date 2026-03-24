@@ -14,16 +14,14 @@ const OLD_DISPLAY_UNIT_KEY =
 
 export const useDisplaySettingsStore = defineStore('displaySettings', () => {
   // --- Migrate from old displayUnit key ---
+  // Old key used useLocalStorage<string> which stores raw strings (not JSON)
   const oldValue = localStorage.getItem(OLD_DISPLAY_UNIT_KEY);
   let defaultUnitSystem: 'imperial' | 'metric' = 'imperial';
   let defaultMetricUnit: DisplaySettings['metricUnitSymbol'] = 'cm';
   if (oldValue !== null) {
-    const parsed = JSON.parse(oldValue) as string;
-    if (parsed === 'mm' || parsed === 'cm' || parsed === 'dm' || parsed === 'm') {
+    if (oldValue === 'mm' || oldValue === 'cm' || oldValue === 'dm' || oldValue === 'm') {
       defaultUnitSystem = 'metric';
-      defaultMetricUnit = parsed;
-    } else {
-      defaultUnitSystem = 'imperial';
+      defaultMetricUnit = oldValue;
     }
     localStorage.removeItem(OLD_DISPLAY_UNIT_KEY);
   }

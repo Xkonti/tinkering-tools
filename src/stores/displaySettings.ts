@@ -18,10 +18,9 @@ export const useDisplaySettingsStore = defineStore('displaySettings', () => {
   let defaultUnitSystem: 'imperial' | 'metric' = 'imperial';
   let defaultMetricUnit: DisplaySettings['metricUnitSymbol'] = 'cm';
   if (oldValue !== null) {
-    const parsed = JSON.parse(oldValue) as string;
-    if (parsed === 'mm' || parsed === 'cm' || parsed === 'dm' || parsed === 'm') {
+    if (oldValue === 'mm' || oldValue === 'cm' || oldValue === 'dm' || oldValue === 'm') {
       defaultUnitSystem = 'metric';
-      defaultMetricUnit = parsed;
+      defaultMetricUnit = oldValue;
     } else {
       defaultUnitSystem = 'imperial';
     }

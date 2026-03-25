@@ -76,7 +76,7 @@ watch(
     }
     displayText.value = formatValue(newVal);
   },
-  { immediate: true, deep: true },
+  { immediate: true },
 );
 
 function onInput(value: string | number | null) {

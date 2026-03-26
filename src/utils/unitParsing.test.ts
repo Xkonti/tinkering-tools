@@ -566,6 +566,7 @@ describe('formatDistanceWithSettings', () => {
     metricUnitSymbol: 'cm',
     metricResolutionMm: 1,
     imperialPrecision: 32,
+    imperialShowFeet: true,
     roundingStrategy: 'ceil',
   };
 
@@ -574,6 +575,7 @@ describe('formatDistanceWithSettings', () => {
     metricUnitSymbol: 'cm',
     metricResolutionMm: 1,
     imperialPrecision: 32,
+    imperialShowFeet: true,
     roundingStrategy: 'round',
   };
 

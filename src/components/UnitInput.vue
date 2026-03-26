@@ -28,6 +28,7 @@ const props = defineProps<{
   modelValue: number | null;
   unitConfig: UnitConfig;
   displaySettings?: DisplaySettings | undefined;
+  rawInput?: string | undefined;
   label?: string | undefined;
   dense?: boolean | undefined;
   outlined?: boolean | undefined;
@@ -36,6 +37,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: number | null): void;
+  (e: 'update:rawInput', value: string): void;
 }>();
 
 const displayText = ref('');
@@ -43,6 +45,7 @@ const lastUsedUnit = ref<UnitDefinition | undefined>(undefined);
 const isFocused = ref(false);
 const hasError = ref(false);
 const errorMessage = ref('');
+const initialized = ref(false);
 
 function getDisplayUnit(): UnitDefinition {
   if (props.displaySettings) {
@@ -70,6 +73,16 @@ watch(
   [() => props.modelValue, () => props.displaySettings],
   ([newVal]) => {
     if (isFocused.value) return;
+
+    // On first render, prefer saved rawInput for restoration from persistence
+    if (!initialized.value) {
+      initialized.value = true;
+      if (props.rawInput) {
+        displayText.value = props.rawInput;
+        return;
+      }
+    }
+
     if (newVal === null || newVal === undefined) {
       displayText.value = '';
       return;
@@ -110,8 +123,11 @@ function onBlur() {
   isFocused.value = false;
 
   const text = displayText.value.trim();
+  displayText.value = text;
+
   if (text === '') {
     emit('update:modelValue', null);
+    emit('update:rawInput', '');
     hasError.value = false;
     errorMessage.value = '';
     return;
@@ -120,12 +136,12 @@ function onBlur() {
   const parsed = parseUnitInput(text, props.unitConfig);
   if (parsed) {
     emit('update:modelValue', parsed.baseValue);
+    emit('update:rawInput', text);
     const unit = findUnitByAlias(props.unitConfig, parsed.unitSymbol);
     if (unit) {
       lastUsedUnit.value = unit;
     }
-    // Reformat to clean display
-    displayText.value = formatValue(parsed.baseValue);
+    // Don't reformat — preserve user's exact input
     hasError.value = false;
     errorMessage.value = '';
   } else {
@@ -134,6 +150,7 @@ function onBlur() {
     errorMessage.value = 'Invalid value — include a unit (e.g. 5in, 32mm)';
     if (props.modelValue !== null && props.modelValue !== undefined) {
       displayText.value = formatValue(props.modelValue);
+      emit('update:rawInput', displayText.value);
     }
     hasError.value = false;
     errorMessage.value = '';

@@ -10,17 +10,21 @@
               <div class="col-6">
                 <DistanceInput
                   v-model="kerf"
+                  :raw-input="kerfRaw"
                   :display-settings="dsSettings"
                   outlined
                   label="Kerf (blade thickness)"
+                  @update:raw-input="kerfRaw = $event"
                 />
               </div>
               <div class="col-6">
                 <DistanceInput
                   v-model="minUsefulRemnant"
+                  :raw-input="minUsefulRemnantRaw"
                   :display-settings="dsSettings"
                   outlined
                   label="Min useful remnant"
+                  @update:raw-input="minUsefulRemnantRaw = $event"
                 />
               </div>
               <div class="col-12">
@@ -71,6 +75,13 @@
                     emit-value
                     map-options
                     label="Precision"
+                  />
+                </div>
+                <div class="col-6">
+                  <q-toggle
+                    v-model="imperialShowFeet"
+                    label="Show feet"
+                    dense
                   />
                 </div>
               </template>
@@ -135,10 +146,12 @@
                   <div class="col">
                     <DistanceInput
                       v-model="board.length"
+                      :raw-input="board.lengthRaw"
                       :display-settings="dsSettings"
                       outlined
                       dense
                       label="Board length"
+                      @update:raw-input="board.lengthRaw = $event"
                     />
                   </div>
                   <div class="col">
@@ -221,10 +234,12 @@
               <div class="col">
                 <DistanceInput
                   v-model="piece.length"
+                  :raw-input="piece.lengthRaw"
                   :display-settings="dsSettings"
                   outlined
                   dense
                   label="Piece length"
+                  @update:raw-input="piece.lengthRaw = $event"
                 />
               </div>
               <div class="col">
@@ -516,7 +531,9 @@ import DistanceInput from 'src/components/DistanceInput.vue';
 const store = useBoardCutOptimizerStore();
 const {
   kerf,
+  kerfRaw,
   minUsefulRemnant,
+  minUsefulRemnantRaw,
   stockTypes,
   requiredPieces,
   stockTypeNames,
@@ -538,6 +555,7 @@ const {
   metricUnitSymbol,
   metricResolutionMm,
   imperialPrecision,
+  imperialShowFeet,
   roundingStrategy,
   settings: dsSettings,
 } = storeToRefs(displaySettingsStore);

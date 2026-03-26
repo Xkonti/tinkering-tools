@@ -382,7 +382,7 @@ export function formatDistanceWithSettings(
     return formatImperial(
       baseMm,
       settings.imperialPrecision,
-      true,
+      settings.imperialShowFeet,
       settings.roundingStrategy,
     );
   }

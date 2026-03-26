@@ -146,6 +146,110 @@ describe('boardCutOptimizer', () => {
     });
   });
 
+  // =============================================================
+  // USER-VERIFIED TEST SCENARIO #2
+  // Mixed leg+bit pieces with short offcuts and long boards.
+  // =============================================================
+  describe('user-verified: 10x leg + 12x bit on 2x4 stock with offcuts', () => {
+    it('uses offcuts for legs+bits, packs remaining onto long boards', () => {
+      // Setup: kerf 0.125" (1/8"), minUsefulRemnant 10"
+      // Stock: 10x 92.5" (7ft 8.5in) + 4x 26.9375" (≈2ft 2 15/16in)
+      // Required: 10x 21" (1ft 9in) "leg" + 12x 5.3125" (5 5/16in) "bit"
+      //
+      // Offcut math: 21 + 0.125 + 5.3125 = 26.4375 used, board 26.9375
+      //   raw remainder 0.5 ≥ kerf → trailing kerf. Total kerf 0.25. Remainder 0.375 (waste).
+      //
+      // Expected layout (order-independent):
+      //   4x 26.9375" board → 1x leg + 1x bit each
+      //   1x 92.5" board   → 4x leg + 1x bit
+      //   1x 92.5" board   → 2x leg + 7x bit
+      const result = optimizeCuts(
+        makeInput({
+          stockTypes: [
+            {
+              name: '2x4',
+              boards: [
+                { length: 92.5, quantity: 10 },
+                { length: 26.9375, quantity: 4 },
+              ],
+            },
+          ],
+          pieces: [
+            {
+              stockTypeName: '2x4',
+              length: 21,
+              quantity: 10,
+              name: 'leg',
+            },
+            {
+              stockTypeName: '2x4',
+              length: 5.3125,
+              quantity: 12,
+              name: 'bit',
+            },
+          ],
+          kerf: 0.125,
+          minUsefulRemnant: 10,
+        }),
+      );
+
+      expect(result.unfulfilled).toHaveLength(0);
+      expect(totalPiecesPlaced(result)).toBe(22);
+
+      const boards = usedBoards(result, '2x4');
+      expect(boards).toHaveLength(6);
+
+      // 4 offcut boards (26.9375"), each with 1 leg + 1 bit
+      const offcuts = boards.filter((b) => b.boardLength === 26.9375);
+      expect(offcuts).toHaveLength(4);
+      for (const oc of offcuts) {
+        expect(oc.pieceLengths).toHaveLength(2);
+        const names = [...oc.pieceNames].sort();
+        expect(names).toEqual(['bit', 'leg']);
+        // kerf: 1 between + 1 trailing = 0.25
+        expect(oc.totalKerf).toBeCloseTo(0.25, 6);
+        // remainder: 26.9375 - 26.3125 - 0.25 = 0.375 (waste)
+        expect(oc.remainder).toBeCloseTo(0.375, 6);
+        expect(oc.remainderIsUsable).toBe(false);
+      }
+
+      // 2 long boards (92.5")
+      const longBoards = boards.filter((b) => b.boardLength === 92.5);
+      expect(longBoards).toHaveLength(2);
+
+      // Sort by number of leg pieces to identify the two boards
+      longBoards.sort(
+        (a, b) =>
+          a.pieceNames.filter((n) => n === 'leg').length -
+          b.pieceNames.filter((n) => n === 'leg').length,
+      );
+
+      // Board with 2 legs + 7 bits: 79.1875 pieces + 1.125 kerf = 80.3125
+      // remainder = 92.5 - 79.1875 - 1.125 = 12.1875 (usable)
+      expect(longBoards[0]!.pieceNames.filter((n) => n === 'leg')).toHaveLength(
+        2,
+      );
+      expect(longBoards[0]!.pieceNames.filter((n) => n === 'bit')).toHaveLength(
+        7,
+      );
+      expect(longBoards[0]!.totalKerf).toBeCloseTo(1.125, 6);
+      expect(longBoards[0]!.remainder).toBeCloseTo(12.1875, 6);
+      expect(longBoards[0]!.remainderIsUsable).toBe(true);
+
+      // Board with 4 legs + 1 bit: 89.3125 pieces + 0.625 kerf = 89.9375
+      // remainder = 92.5 - 89.3125 - 0.625 = 2.5625 (waste)
+      expect(longBoards[1]!.pieceNames.filter((n) => n === 'leg')).toHaveLength(
+        4,
+      );
+      expect(longBoards[1]!.pieceNames.filter((n) => n === 'bit')).toHaveLength(
+        1,
+      );
+      expect(longBoards[1]!.totalKerf).toBeCloseTo(0.625, 6);
+      expect(longBoards[1]!.remainder).toBeCloseTo(2.5625, 6);
+      expect(longBoards[1]!.remainderIsUsable).toBe(false);
+    });
+  });
+
   describe('basic placement', () => {
     it('places a single piece on the only available board', () => {
       const result = optimizeCuts(

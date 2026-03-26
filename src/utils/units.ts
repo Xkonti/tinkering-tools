@@ -49,6 +49,7 @@ export interface DisplaySettings {
   readonly metricUnitSymbol: 'mm' | 'cm' | 'dm' | 'm';
   readonly metricResolutionMm: number;
   readonly imperialPrecision: number;
+  readonly imperialShowFeet: boolean;
   readonly roundingStrategy: RoundingStrategy;
 }
 

@@ -43,6 +43,10 @@ export const useDisplaySettingsStore = defineStore('displaySettings', () => {
     `${STORAGE_KEY}:imperialPrecision`,
     32,
   );
+  const imperialShowFeet = useLocalStorage<boolean>(
+    `${STORAGE_KEY}:imperialShowFeet`,
+    true,
+  );
   const roundingStrategy = useLocalStorage<RoundingStrategy>(
     `${STORAGE_KEY}:rounding`,
     'ceil',
@@ -53,6 +57,7 @@ export const useDisplaySettingsStore = defineStore('displaySettings', () => {
     metricUnitSymbol: metricUnitSymbol.value,
     metricResolutionMm: metricResolutionMm.value,
     imperialPrecision: imperialPrecision.value,
+    imperialShowFeet: imperialShowFeet.value,
     roundingStrategy: roundingStrategy.value,
   }));
 
@@ -72,6 +77,7 @@ export const useDisplaySettingsStore = defineStore('displaySettings', () => {
     metricUnitSymbol,
     metricResolutionMm,
     imperialPrecision,
+    imperialShowFeet,
     roundingStrategy,
     settings,
     displayUnit,

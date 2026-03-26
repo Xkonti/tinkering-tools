@@ -8,6 +8,7 @@ export interface StockTypeInput {
   boards: {
     id: string;
     length: number | null;
+    lengthRaw?: string;
     quantity: number | null;
     name: string;
   }[];
@@ -17,6 +18,7 @@ export interface RequiredPieceInput {
   id: string;
   stockTypeName: string;
   length: number | null;
+  lengthRaw?: string;
   quantity: number | null;
   name: string;
 }
@@ -27,9 +29,14 @@ export const useBoardCutOptimizerStore = defineStore(
   'boardCutOptimizer',
   () => {
     const kerf = useLocalStorage<number>(`${STORAGE_KEY}:kerf`, 3.175);
+    const kerfRaw = useLocalStorage<string>(`${STORAGE_KEY}:kerfRaw`, '');
     const minUsefulRemnant = useLocalStorage<number>(
       `${STORAGE_KEY}:minUsefulRemnant`,
       254,
+    );
+    const minUsefulRemnantRaw = useLocalStorage<string>(
+      `${STORAGE_KEY}:minUsefulRemnantRaw`,
+      '',
     );
 
     const stockTypes = useLocalStorage<StockTypeInput[]>(
@@ -103,7 +110,9 @@ export const useBoardCutOptimizerStore = defineStore(
 
     return {
       kerf,
+      kerfRaw,
       minUsefulRemnant,
+      minUsefulRemnantRaw,
       stockTypes,
       requiredPieces,
       stockTypeNames,

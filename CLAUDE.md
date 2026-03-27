@@ -40,6 +40,88 @@ Route meta is typed via `src/router/route-meta.d.ts` — no need to cast `route.
 - Sidebar nav components: `ToolCategoryNav.vue` (accordion) and `ToolEntryNav.vue` (nav item)
 - Tool pages live in `src/pages/` and are added as children of the MainLayout route in `src/router/routes.ts`
 
+## Project system (per-tool state persistence)
+
+Tools that need persistent user data use the `useToolProjects<T>()` composable (`src/composables/useToolProjects.ts`). It provides:
+
+- **Single-blob storage** — entire tool state is one JSON object in localStorage per project
+- **Named projects** — users can create, duplicate, rename, delete, and switch between projects
+- **Versioned export/import** — projects export to JSON files with a version number and can be imported back
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `src/composables/useToolProjects.ts` | Core composable — state persistence, project CRUD, export/import |
+| `src/components/ToolProjectBar.vue` | Reusable UI bar — project picker + actions menu (placed in tool pages) |
+
+### localStorage key scheme
+
+```
+tt:{toolId}:projects          → ProjectMeta[]
+tt:{toolId}:active            → string (active project ID)
+tt:{toolId}:project:{id}      → T (full state blob)
+```
+
+### Adding the project system to a new tool
+
+1. **Define the state interface** in the tool's store (`src/stores/myTool.ts`):
+   ```typescript
+   interface MyToolState { /* all fields the tool persists per project */ }
+   ```
+
+2. **Call `useToolProjects`** in the Pinia store setup function:
+   ```typescript
+   const { state, projects, activeProject, ...actions } = useToolProjects<MyToolState>({
+     toolId: 'my-tool',
+     currentVersion: 1,
+     importers: { 1: (raw) => raw as MyToolState },
+     defaults: () => ({ /* default values */ }),
+   });
+   ```
+
+3. **Add `ToolProjectBar`** to the tool page template and wire events:
+   ```vue
+   <ToolProjectBar :projects="projects" :active-project-id="activeProject?.id"
+     @switch="switchProject" @create="createProject" @duplicate="duplicateProject"
+     @rename="renameProject" @delete="deleteProject" @reset="resetCurrentProject"
+     @export="handleExport" @import="handleImport" />
+   ```
+
+4. **Handle export/import** in the page script (file download + notification on import result).
+
+### Versioning: how to bump a tool's state version
+
+When a tool's state shape changes (fields added, renamed, or removed):
+
+1. **Bump `currentVersion`** (e.g., `1` → `2`)
+2. **Add a new importer** for the new version (identity: `(raw) => raw as MyToolState`)
+3. **Update the old version's importer** to transform the old shape into the new one:
+   ```typescript
+   importers: {
+     1: (raw) => {
+       const v1 = raw as MyToolStateV1;
+       return { ...v1, newField: 'default' };  // fill in new/changed fields
+     },
+     2: (raw) => raw as MyToolState,
+   }
+   ```
+4. **Keep the last 5 versions** of importers. Drop older ones when adding new versions.
+
+### Export file format
+
+```json
+{
+  "toolId": "my-tool",
+  "toolVersion": 1,
+  "projectName": "My Project",
+  "exportedAt": 1711440000000,
+  "state": { ... }
+}
+```
+
+On import, the composable validates `toolId`, looks up the version's importer, transforms the state, and creates a new project. Mismatched tool IDs, unknown versions, and corrupt files produce user-friendly error messages.
+
 ## Code conventions
 
 - ESLint enforces `consistent-type-imports` — always use `import type { ... }` for type-only imports

@@ -1,6 +1,22 @@
 <template>
   <q-page class="q-pa-md">
     <div class="row q-col-gutter-md">
+      <!-- Project bar -->
+      <div class="col-12">
+        <ToolProjectBar
+          :projects="projects"
+          :active-project-id="activeProject?.id"
+          @switch="switchProject"
+          @create="createProject"
+          @duplicate="duplicateProject"
+          @rename="renameProject"
+          @delete="deleteProject"
+          @reset="resetCurrentProject"
+          @export="handleExport"
+          @import="handleImport"
+        />
+      </div>
+
       <!-- Settings -->
       <div class="col-12 col-md-6">
         <q-card>
@@ -9,27 +25,27 @@
             <div class="row q-col-gutter-md">
               <div class="col-6">
                 <DistanceInput
-                  v-model="kerf"
-                  :raw-input="kerfRaw"
+                  v-model="state.kerf"
+                  :raw-input="state.kerfRaw"
                   :display-settings="dsSettings"
                   outlined
                   label="Kerf (blade thickness)"
-                  @update:raw-input="kerfRaw = $event"
+                  @update:raw-input="state.kerfRaw = $event"
                 />
               </div>
               <div class="col-6">
                 <DistanceInput
-                  v-model="minUsefulRemnant"
-                  :raw-input="minUsefulRemnantRaw"
+                  v-model="state.minUsefulRemnant"
+                  :raw-input="state.minUsefulRemnantRaw"
                   :display-settings="dsSettings"
                   outlined
                   label="Min useful remnant"
-                  @update:raw-input="minUsefulRemnantRaw = $event"
+                  @update:raw-input="state.minUsefulRemnantRaw = $event"
                 />
               </div>
               <div class="col-12">
                 <q-btn-toggle
-                  v-model="unitSystem"
+                  v-model="state.unitSystem"
                   no-caps
                   rounded
                   toggle-color="primary"
@@ -40,11 +56,11 @@
                 />
               </div>
               <template
-                v-if="unitSystem === 'metric'"
+                v-if="state.unitSystem === 'metric'"
               >
                 <div class="col-6">
                   <q-select
-                    v-model="metricUnitSymbol"
+                    v-model="state.metricUnitSymbol"
                     :options="metricUnitOptions"
                     outlined
                     dense
@@ -55,7 +71,7 @@
                 </div>
                 <div class="col-6">
                   <q-select
-                    v-model="metricResolutionMm"
+                    v-model="state.metricResolutionMm"
                     :options="metricPrecisionOptions"
                     outlined
                     dense
@@ -68,7 +84,7 @@
               <template v-else>
                 <div class="col-6">
                   <q-select
-                    v-model="imperialPrecision"
+                    v-model="state.imperialPrecision"
                     :options="imperialPrecisionOptions"
                     outlined
                     dense
@@ -79,7 +95,7 @@
                 </div>
                 <div class="col-6">
                   <q-toggle
-                    v-model="imperialShowFeet"
+                    v-model="state.imperialShowFeet"
                     label="Show feet"
                     dense
                   />
@@ -87,7 +103,7 @@
               </template>
               <div class="col-12 col-sm-6">
                 <q-select
-                  v-model="roundingStrategy"
+                  v-model="state.roundingStrategy"
                   :options="roundingOptions"
                   outlined
                   dense
@@ -108,7 +124,7 @@
             <div class="text-h6 q-mb-md">Stock Inventory</div>
 
             <q-card
-              v-for="st in stockTypes"
+              v-for="st in state.stockTypes"
               :key="st.id"
               flat
               bordered
@@ -132,7 +148,7 @@
                       round
                       icon="delete"
                       color="negative"
-                      :disable="stockTypes.length <= 1"
+                      :disable="state.stockTypes.length <= 1"
                       @click="removeStockType(st.id)"
                     />
                   </div>
@@ -216,7 +232,7 @@
             <div class="text-h6 q-mb-md">Required Pieces</div>
 
             <div
-              v-for="piece in requiredPieces"
+              v-for="piece in state.requiredPieces"
               :key="piece.id"
               class="row items-center q-col-gutter-sm q-mb-xs"
             >
@@ -268,7 +284,7 @@
                   round
                   icon="delete"
                   color="negative"
-                  :disable="requiredPieces.length <= 1"
+                  :disable="state.requiredPieces.length <= 1"
                   @click="removeRequiredPiece(piece.id)"
                 />
               </div>
@@ -429,7 +445,7 @@
                       v-if="pieceIdx < pattern.pieces.length - 1"
                       :style="{
                         flexBasis:
-                          toPercent(kerf, pattern.stockBoard.length) + '%',
+                          toPercent(state.kerf, pattern.stockBoard.length) + '%',
                         backgroundColor: '#212121',
                         minWidth: '1px',
                       }"
@@ -509,11 +525,50 @@
         </q-card>
       </div>
     </div>
+
+    <!-- Import conflict dialog -->
+    <q-dialog v-model="showImportConflictDialog" persistent>
+      <q-card style="min-width: 350px">
+        <q-card-section>
+          <div class="text-h6">Import Conflict</div>
+        </q-card-section>
+        <q-card-section>
+          A project named "{{ pendingImport?.originalName }}" already exists.
+          You can import with a different name or replace the existing project.
+          <q-input
+            v-model="importDialogName"
+            outlined
+            dense
+            label="Project name"
+            class="q-mt-md"
+            :error="importNameConflict"
+            error-message="A project with this name already exists"
+          />
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" v-close-popup />
+          <q-btn
+            flat
+            label="Replace existing"
+            color="negative"
+            @click="confirmImportReplace"
+          />
+          <q-btn
+            flat
+            label="Import as new"
+            color="primary"
+            :disable="!importDialogName.trim() || importNameConflict"
+            @click="confirmImportRename"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useQuasar } from 'quasar';
 import { storeToRefs } from 'pinia';
 import { optimizeCuts } from 'src/utils/boardCutOptimizer';
 import type {
@@ -524,21 +579,31 @@ import type {
   StockBoard,
 } from 'src/utils/boardCutOptimizer';
 import { useBoardCutOptimizerStore } from 'src/stores/boardCutOptimizer';
-import { useDisplaySettingsStore } from 'src/stores/displaySettings';
+import type { BoardCutOptimizerState } from 'src/stores/boardCutOptimizer';
+import type { PreparedImport } from 'src/composables/useToolProjects';
 import { formatDistanceWithSettings } from 'src/utils/unitParsing';
 import DistanceInput from 'src/components/DistanceInput.vue';
+import ToolProjectBar from 'src/components/ToolProjectBar.vue';
 
+const $q = useQuasar();
 const store = useBoardCutOptimizerStore();
 const {
-  kerf,
-  kerfRaw,
-  minUsefulRemnant,
-  minUsefulRemnantRaw,
-  stockTypes,
-  requiredPieces,
+  state,
+  projects,
+  activeProject,
+  displaySettings: dsSettings,
   stockTypeNames,
 } = storeToRefs(store);
 const {
+  switchProject,
+  createProject,
+  duplicateProject,
+  renameProject,
+  deleteProject,
+  resetCurrentProject,
+  exportProject,
+  prepareImport,
+  completeImport,
   addStockType,
   removeStockType,
   addBoard,
@@ -547,18 +612,67 @@ const {
   removeRequiredPiece,
 } = store;
 
-// --- Display settings ---
+// --- Export / Import ---
 
-const displaySettingsStore = useDisplaySettingsStore();
-const {
-  unitSystem,
-  metricUnitSymbol,
-  metricResolutionMm,
-  imperialPrecision,
-  imperialShowFeet,
-  roundingStrategy,
-  settings: dsSettings,
-} = storeToRefs(displaySettingsStore);
+function handleExport() {
+  const data = exportProject();
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${data.projectName}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Import state
+const pendingImport = ref<PreparedImport<BoardCutOptimizerState> | null>(null);
+const showImportConflictDialog = ref(false);
+const importDialogName = ref('');
+
+const importExistingNames = computed(() => new Set(projects.value.map((p) => p.name)));
+const importNameConflict = computed(() => {
+  const name = importDialogName.value.trim();
+  return name.length > 0 && importExistingNames.value.has(name);
+});
+
+function handleImport(json: string) {
+  const result = prepareImport(json);
+  if ('error' in result) {
+    $q.notify({ type: 'negative', message: result.error });
+    return;
+  }
+  if (result.conflictProjectId) {
+    // Name conflict — show resolution dialog
+    pendingImport.value = result;
+    importDialogName.value = result.originalName;
+    showImportConflictDialog.value = true;
+  } else {
+    // No conflict — import directly
+    completeImport(result, result.originalName);
+    $q.notify({ type: 'positive', message: `Imported project "${result.originalName}"` });
+  }
+}
+
+function confirmImportReplace() {
+  if (!pendingImport.value) return;
+  showImportConflictDialog.value = false;
+  completeImport(pendingImport.value, pendingImport.value.originalName, pendingImport.value.conflictProjectId);
+  $q.notify({ type: 'positive', message: `Replaced project "${pendingImport.value.originalName}"` });
+  pendingImport.value = null;
+}
+
+function confirmImportRename() {
+  const name = importDialogName.value.trim();
+  if (!name || importNameConflict.value || !pendingImport.value) return;
+  showImportConflictDialog.value = false;
+  completeImport(pendingImport.value, name);
+  $q.notify({ type: 'positive', message: `Imported project "${name}"` });
+  pendingImport.value = null;
+}
+
+// --- Display settings options ---
 
 const metricUnitOptions = [
   { label: 'mm', value: 'mm' },
@@ -596,13 +710,13 @@ function fmtDist(mm: number): string {
 // --- Optimization ---
 
 function buildInput(): CutOptimizerInput | null {
-  const k = kerf.value;
-  const minR = minUsefulRemnant.value;
+  const k = state.value.kerf;
+  const minR = state.value.minUsefulRemnant;
   if (!Number.isFinite(k) || k < 0) return null;
   if (!Number.isFinite(minR) || minR < 0) return null;
 
   const types: CutOptimizerInput['stockTypes'] = [];
-  for (const st of stockTypes.value) {
+  for (const st of state.value.stockTypes) {
     if (!st.name) return null;
     const boards: StockBoard[] = [];
     for (const b of st.boards) {
@@ -623,7 +737,7 @@ function buildInput(): CutOptimizerInput | null {
   }
 
   const pieces: CutOptimizerInput['requiredPieces'] = [];
-  for (const rp of requiredPieces.value) {
+  for (const rp of state.value.requiredPieces) {
     if (!rp.stockTypeName) return null;
     if (rp.length === null || rp.quantity === null) return null;
     if (!Number.isFinite(rp.length) || rp.length <= 0) return null;
@@ -649,7 +763,7 @@ function buildInput(): CutOptimizerInput | null {
 
 const result = ref<CutOptimizerResult | null>(null);
 watch(
-  [kerf, minUsefulRemnant, stockTypes, requiredPieces],
+  state,
   () => {
     const inp = buildInput();
     result.value = inp ? optimizeCuts(inp) : null;

@@ -11,9 +11,25 @@ export interface ProjectMeta {
   readonly updatedAt: number;
 }
 
+export interface ToolProjectExport {
+  readonly toolId: string;
+  readonly toolVersion: number;
+  readonly projectName: string;
+  readonly exportedAt: number;
+  readonly state: unknown;
+}
+
 export interface UseToolProjectsOptions<T> {
   /** Unique tool identifier used in localStorage keys, e.g. 'board-cut-optimizer'. */
   toolId: string;
+  /** Current version of the tool's state format. Written into exports. */
+  currentVersion: number;
+  /**
+   * Map from version number to a function that transforms that version's raw state
+   * into the current state shape. Must include an entry for `currentVersion`.
+   * Older version importers handle migration from previous state shapes.
+   */
+  importers: Record<number, (rawState: unknown) => T>;
   /** Factory returning the default state for a new project. */
   defaults: () => T;
   /**
@@ -44,6 +60,10 @@ export interface UseToolProjectsReturn<T> {
   deleteProject: (projectId: string) => void;
   /** Reset the active project's state to defaults. */
   resetCurrentProject: () => void;
+  /** Export the active project as a versioned export object. */
+  exportProject: () => ToolProjectExport;
+  /** Import a project from a JSON string. Returns the project name on success or an error message. */
+  importProject: (json: string) => { projectName: string } | { error: string };
 }
 
 // --- Helpers ---
@@ -92,7 +112,7 @@ function makeProjectMeta(name: string): ProjectMeta {
 export function useToolProjects<T>(
   options: UseToolProjectsOptions<T>,
 ): UseToolProjectsReturn<T> {
-  const { toolId, defaults, migrate } = options;
+  const { toolId, currentVersion, importers, defaults, migrate } = options;
 
   // --- Project list and active ID (persisted via useLocalStorage) ---
   const projects = useLocalStorage<ProjectMeta[]>(storageKeyProjects(toolId), []);
@@ -227,6 +247,62 @@ export function useToolProjects<T>(
     state.value = defaults();
   }
 
+  function exportProject(): ToolProjectExport {
+    return {
+      toolId,
+      toolVersion: currentVersion,
+      projectName: activeProject.value?.name ?? 'Unnamed',
+      exportedAt: Date.now(),
+      state: JSON.parse(JSON.stringify(state.value)) as unknown,
+    };
+  }
+
+  function importProject(json: string): { projectName: string } | { error: string } {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return { error: 'Invalid JSON file.' };
+    }
+
+    if (typeof parsed !== 'object' || parsed === null) {
+      return { error: 'Invalid file format.' };
+    }
+
+    const data = parsed as Record<string, unknown>;
+
+    if (data['toolId'] !== toolId) {
+      return { error: `This file is from a different tool ("${String(data['toolId'])}").` };
+    }
+
+    const version = data['toolVersion'];
+    if (typeof version !== 'number' || !Number.isInteger(version)) {
+      return { error: 'Invalid version number in file.' };
+    }
+
+    const importer = importers[version];
+    if (!importer) {
+      if (version > currentVersion) {
+        return { error: `This file is from a newer version (v${String(version)}). Please update the app.` };
+      }
+      return { error: `This file version (v${String(version)}) is too old to import.` };
+    }
+
+    let importedState: T;
+    try {
+      importedState = importer(data['state']);
+    } catch {
+      return { error: 'Failed to read project data from file.' };
+    }
+
+    const projectName = typeof data['projectName'] === 'string' && data['projectName'].length > 0
+      ? data['projectName']
+      : 'Imported';
+
+    createProject(projectName, importedState);
+    return { projectName };
+  }
+
   return {
     state,
     projects,
@@ -237,5 +313,7 @@ export function useToolProjects<T>(
     renameProject,
     deleteProject,
     resetCurrentProject,
+    exportProject,
+    importProject,
   };
 }

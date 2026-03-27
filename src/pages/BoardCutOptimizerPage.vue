@@ -12,6 +12,8 @@
           @rename="renameProject"
           @delete="deleteProject"
           @reset="resetCurrentProject"
+          @export="handleExport"
+          @import="handleImport"
         />
       </div>
 
@@ -528,6 +530,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useQuasar } from 'quasar';
 import { storeToRefs } from 'pinia';
 import { optimizeCuts } from 'src/utils/boardCutOptimizer';
 import type {
@@ -542,6 +545,7 @@ import { formatDistanceWithSettings } from 'src/utils/unitParsing';
 import DistanceInput from 'src/components/DistanceInput.vue';
 import ToolProjectBar from 'src/components/ToolProjectBar.vue';
 
+const $q = useQuasar();
 const store = useBoardCutOptimizerStore();
 const {
   state,
@@ -557,6 +561,8 @@ const {
   renameProject,
   deleteProject,
   resetCurrentProject,
+  exportProject,
+  importProject,
   addStockType,
   removeStockType,
   addBoard,
@@ -564,6 +570,31 @@ const {
   addRequiredPiece,
   removeRequiredPiece,
 } = store;
+
+// --- Export / Import ---
+
+function handleExport() {
+  const data = exportProject();
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${data.projectName}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function handleImport(json: string) {
+  const result = importProject(json);
+  if ('error' in result) {
+    $q.notify({ type: 'negative', message: result.error });
+  } else {
+    $q.notify({ type: 'positive', message: `Imported project "${result.projectName}"` });
+  }
+}
+
+// --- Display settings options ---
 
 const metricUnitOptions = [
   { label: 'mm', value: 'mm' },

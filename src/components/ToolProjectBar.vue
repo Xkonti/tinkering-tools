@@ -33,6 +33,15 @@
             <q-item-section>Rename</q-item-section>
           </q-item>
           <q-separator />
+          <q-item clickable v-close-popup @click="$emit('export')">
+            <q-item-section avatar><q-icon name="file_download" /></q-item-section>
+            <q-item-section>Export project</q-item-section>
+          </q-item>
+          <q-item clickable v-close-popup @click="triggerImport">
+            <q-item-section avatar><q-icon name="file_upload" /></q-item-section>
+            <q-item-section>Import project</q-item-section>
+          </q-item>
+          <q-separator />
           <q-item clickable v-close-popup @click="promptReset">
             <q-item-section avatar><q-icon name="restart_alt" /></q-item-section>
             <q-item-section>Reset to defaults</q-item-section>
@@ -154,6 +163,15 @@
     </q-card>
   </q-dialog>
 
+  <!-- Hidden file input for import -->
+  <input
+    ref="fileInputRef"
+    type="file"
+    accept=".json"
+    style="display: none"
+    @change="onFileSelected"
+  />
+
   <!-- Reset confirmation -->
   <q-dialog v-model="showResetDialog">
     <q-card style="min-width: 300px">
@@ -187,7 +205,30 @@ const emit = defineEmits<{
   (e: 'rename', projectId: string, name: string): void;
   (e: 'delete', projectId: string): void;
   (e: 'reset'): void;
+  (e: 'export'): void;
+  (e: 'import', json: string): void;
 }>();
+
+const fileInputRef = ref<HTMLInputElement | null>(null);
+
+function triggerImport() {
+  fileInputRef.value?.click();
+}
+
+function onFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (typeof reader.result === 'string') {
+      emit('import', reader.result);
+    }
+  };
+  reader.readAsText(file);
+  // Reset so the same file can be selected again
+  input.value = '';
+}
 
 const projectOptions = computed(() =>
   props.projects.map((p) => ({ label: p.name, value: p.id })),

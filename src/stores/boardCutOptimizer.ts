@@ -215,8 +215,14 @@ export const useBoardCutOptimizerStore = defineStore(
       renameProject,
       deleteProject,
       resetCurrentProject,
+      exportProject,
+      importProject,
     } = useToolProjects<BoardCutOptimizerState>({
       toolId: 'board-cut-optimizer',
+      currentVersion: 1,
+      importers: {
+        1: (raw: unknown) => raw as BoardCutOptimizerState,
+      },
       defaults: createDefaults,
       migrate: migrateLegacyData,
     });
@@ -301,6 +307,8 @@ export const useBoardCutOptimizerStore = defineStore(
       renameProject,
       deleteProject,
       resetCurrentProject,
+      exportProject,
+      importProject,
       stockTypeNames,
       addStockType,
       removeStockType,

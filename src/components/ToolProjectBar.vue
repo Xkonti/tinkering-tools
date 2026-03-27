@@ -73,6 +73,8 @@
           dense
           label="Project name"
           autofocus
+          :error="nameConflict"
+          error-message="A project with this name already exists"
           @keyup.enter="confirmNew"
         />
       </q-card-section>
@@ -82,7 +84,7 @@
           flat
           label="Create"
           color="primary"
-          :disable="!dialogName.trim()"
+          :disable="!dialogName.trim() || nameConflict"
           @click="confirmNew"
         />
       </q-card-actions>
@@ -102,6 +104,8 @@
           dense
           label="Project name"
           autofocus
+          :error="nameConflict"
+          error-message="A project with this name already exists"
           @keyup.enter="confirmDuplicate"
         />
       </q-card-section>
@@ -111,7 +115,7 @@
           flat
           label="Duplicate"
           color="primary"
-          :disable="!dialogName.trim()"
+          :disable="!dialogName.trim() || nameConflict"
           @click="confirmDuplicate"
         />
       </q-card-actions>
@@ -131,6 +135,8 @@
           dense
           label="Project name"
           autofocus
+          :error="renameConflict"
+          error-message="A project with this name already exists"
           @keyup.enter="confirmRename"
         />
       </q-card-section>
@@ -140,7 +146,7 @@
           flat
           label="Rename"
           color="primary"
-          :disable="!dialogName.trim()"
+          :disable="!dialogName.trim() || renameConflict"
           @click="confirmRename"
         />
       </q-card-actions>
@@ -238,6 +244,8 @@ const activeProjectName = computed(
   () => props.projects.find((p) => p.id === props.activeProjectId)?.name ?? '',
 );
 
+const existingNames = computed(() => new Set(props.projects.map((p) => p.name)));
+
 // --- Dialog state ---
 const dialogName = ref('');
 
@@ -247,6 +255,20 @@ const showRenameDialog = ref(false);
 const showDeleteDialog = ref(false);
 const showResetDialog = ref(false);
 
+// Name conflict for create/duplicate (any existing name is a conflict)
+const nameConflict = computed(() => {
+  const name = dialogName.value.trim();
+  return name.length > 0 && existingNames.value.has(name);
+});
+
+// For rename, keeping the current name is not a conflict
+const renameConflict = computed(() => {
+  const name = dialogName.value.trim();
+  if (name.length === 0) return false;
+  if (name === activeProjectName.value) return false;
+  return existingNames.value.has(name);
+});
+
 function promptNew() {
   dialogName.value = '';
   showNewDialog.value = true;
@@ -254,7 +276,7 @@ function promptNew() {
 
 function confirmNew() {
   const name = dialogName.value.trim();
-  if (!name) return;
+  if (!name || nameConflict.value) return;
   showNewDialog.value = false;
   emit('create', name);
 }
@@ -266,7 +288,7 @@ function promptDuplicate() {
 
 function confirmDuplicate() {
   const name = dialogName.value.trim();
-  if (!name) return;
+  if (!name || nameConflict.value) return;
   showDuplicateDialog.value = false;
   emit('duplicate', name);
 }
@@ -278,7 +300,7 @@ function promptRename() {
 
 function confirmRename() {
   const name = dialogName.value.trim();
-  if (!name || !props.activeProjectId) return;
+  if (!name || renameConflict.value || !props.activeProjectId) return;
   showRenameDialog.value = false;
   emit('rename', props.activeProjectId, name);
 }

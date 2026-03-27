@@ -62,8 +62,25 @@ export interface UseToolProjectsReturn<T> {
   resetCurrentProject: () => void;
   /** Export the active project as a versioned export object. */
   exportProject: () => ToolProjectExport;
-  /** Import a project from a JSON string. Returns the project name on success or an error message. */
-  importProject: (json: string) => { projectName: string } | { error: string };
+  /**
+   * Parse and validate an import JSON string. Returns a PreparedImport on success
+   * (which may flag a name conflict), or an error message.
+   */
+  prepareImport: (json: string) => PreparedImport<T> | { error: string };
+  /**
+   * Finalize a prepared import. Pass the prepared data, a final project name,
+   * and optionally a project ID to replace (overwrites that project's state instead of creating a new one).
+   */
+  completeImport: (prepared: PreparedImport<T>, name: string, replaceProjectId?: string) => void;
+}
+
+export interface PreparedImport<T> {
+  /** The project name from the export file. */
+  originalName: string;
+  /** The imported state, already transformed to the current version. */
+  state: T;
+  /** ID of the existing project with the same name, if any. */
+  conflictProjectId?: string;
 }
 
 // --- Helpers ---
@@ -257,7 +274,7 @@ export function useToolProjects<T>(
     };
   }
 
-  function importProject(json: string): { projectName: string } | { error: string } {
+  function prepareImport(json: string): PreparedImport<T> | { error: string } {
     let parsed: unknown;
     try {
       parsed = JSON.parse(json);
@@ -295,12 +312,39 @@ export function useToolProjects<T>(
       return { error: 'Failed to read project data from file.' };
     }
 
-    const projectName = typeof data['projectName'] === 'string' && data['projectName'].length > 0
+    const originalName = typeof data['projectName'] === 'string' && data['projectName'].length > 0
       ? data['projectName']
       : 'Imported';
 
-    createProject(projectName, importedState);
-    return { projectName };
+    const conflict = projects.value.find((p) => p.name === originalName);
+    const result: PreparedImport<T> = { originalName, state: importedState };
+    if (conflict) {
+      result.conflictProjectId = conflict.id;
+    }
+    return result;
+  }
+
+  function completeImport(prepared: PreparedImport<T>, name: string, replaceProjectId?: string): void {
+    if (replaceProjectId) {
+      // Replace an existing project's state
+      const idx = projects.value.findIndex((p) => p.id === replaceProjectId);
+      if (idx >= 0) {
+        saveProjectState(toolId, replaceProjectId, prepared.state);
+        const proj = projects.value[idx]!;
+        projects.value[idx] = { ...proj, updatedAt: Date.now() };
+        projects.value = [...projects.value];
+        // Switch to the replaced project
+        if (replaceProjectId !== activeId.value) {
+          switchProject(replaceProjectId);
+        } else {
+          suppressWatch = true;
+          state.value = JSON.parse(JSON.stringify(prepared.state)) as T;
+          suppressWatch = false;
+        }
+      }
+    } else {
+      createProject(name, prepared.state);
+    }
   }
 
   return {
@@ -314,6 +358,7 @@ export function useToolProjects<T>(
     deleteProject,
     resetCurrentProject,
     exportProject,
-    importProject,
+    prepareImport,
+    completeImport,
   };
 }

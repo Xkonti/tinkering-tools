@@ -525,6 +525,44 @@
         </q-card>
       </div>
     </div>
+
+    <!-- Import conflict dialog -->
+    <q-dialog v-model="showImportConflictDialog" persistent>
+      <q-card style="min-width: 350px">
+        <q-card-section>
+          <div class="text-h6">Import Conflict</div>
+        </q-card-section>
+        <q-card-section>
+          A project named "{{ pendingImport?.originalName }}" already exists.
+          You can import with a different name or replace the existing project.
+          <q-input
+            v-model="importDialogName"
+            outlined
+            dense
+            label="Project name"
+            class="q-mt-md"
+            :error="importNameConflict"
+            error-message="A project with this name already exists"
+          />
+        </q-card-section>
+        <q-card-actions align="right">
+          <q-btn flat label="Cancel" v-close-popup />
+          <q-btn
+            flat
+            label="Replace existing"
+            color="negative"
+            @click="confirmImportReplace"
+          />
+          <q-btn
+            flat
+            label="Import as new"
+            color="primary"
+            :disable="!importDialogName.trim() || importNameConflict"
+            @click="confirmImportRename"
+          />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
   </q-page>
 </template>
 
@@ -541,6 +579,8 @@ import type {
   StockBoard,
 } from 'src/utils/boardCutOptimizer';
 import { useBoardCutOptimizerStore } from 'src/stores/boardCutOptimizer';
+import type { BoardCutOptimizerState } from 'src/stores/boardCutOptimizer';
+import type { PreparedImport } from 'src/composables/useToolProjects';
 import { formatDistanceWithSettings } from 'src/utils/unitParsing';
 import DistanceInput from 'src/components/DistanceInput.vue';
 import ToolProjectBar from 'src/components/ToolProjectBar.vue';
@@ -562,7 +602,8 @@ const {
   deleteProject,
   resetCurrentProject,
   exportProject,
-  importProject,
+  prepareImport,
+  completeImport,
   addStockType,
   removeStockType,
   addBoard,
@@ -585,13 +626,50 @@ function handleExport() {
   URL.revokeObjectURL(url);
 }
 
+// Import state
+const pendingImport = ref<PreparedImport<BoardCutOptimizerState> | null>(null);
+const showImportConflictDialog = ref(false);
+const importDialogName = ref('');
+
+const importExistingNames = computed(() => new Set(projects.value.map((p) => p.name)));
+const importNameConflict = computed(() => {
+  const name = importDialogName.value.trim();
+  return name.length > 0 && importExistingNames.value.has(name);
+});
+
 function handleImport(json: string) {
-  const result = importProject(json);
+  const result = prepareImport(json);
   if ('error' in result) {
     $q.notify({ type: 'negative', message: result.error });
-  } else {
-    $q.notify({ type: 'positive', message: `Imported project "${result.projectName}"` });
+    return;
   }
+  if (result.conflictProjectId) {
+    // Name conflict — show resolution dialog
+    pendingImport.value = result;
+    importDialogName.value = result.originalName;
+    showImportConflictDialog.value = true;
+  } else {
+    // No conflict — import directly
+    completeImport(result, result.originalName);
+    $q.notify({ type: 'positive', message: `Imported project "${result.originalName}"` });
+  }
+}
+
+function confirmImportReplace() {
+  if (!pendingImport.value) return;
+  showImportConflictDialog.value = false;
+  completeImport(pendingImport.value, pendingImport.value.originalName, pendingImport.value.conflictProjectId);
+  $q.notify({ type: 'positive', message: `Replaced project "${pendingImport.value.originalName}"` });
+  pendingImport.value = null;
+}
+
+function confirmImportRename() {
+  const name = importDialogName.value.trim();
+  if (!name || importNameConflict.value || !pendingImport.value) return;
+  showImportConflictDialog.value = false;
+  completeImport(pendingImport.value, name);
+  $q.notify({ type: 'positive', message: `Imported project "${name}"` });
+  pendingImport.value = null;
 }
 
 // --- Display settings options ---

@@ -127,4 +127,5 @@ On import, the composable validates `toolId`, looks up the version's importer, t
 - ESLint enforces `consistent-type-imports` — always use `import type { ... }` for type-only imports
 - Quasar components are auto-imported; custom components need explicit imports in `<script setup>`
 - TypeScript strict mode with `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess` enabled
-- No custom CSS — use Quasar utility classes (`q-pa-md`, `row`, `col-*`, `text-*`, etc.) and component props
+- Prefer Quasar utility classes (`q-pa-md`, `row`, `col-*`, `text-*`, etc.) and component props. Light custom CSS is fine where utilities don't reach, but don't recreate or override Quasar's grid/spacing/component styles.
+- Tool page layout conventions are documented in `src/pages/CLAUDE.md`

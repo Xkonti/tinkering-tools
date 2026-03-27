@@ -18,32 +18,33 @@
       </div>
 
       <!-- Settings -->
-      <div class="col-12 col-md-6">
-        <q-card>
-          <q-card-section>
-            <div class="text-h6 q-mb-md">Settings</div>
-            <div class="row q-col-gutter-md">
-              <div class="col-6">
+      <div class="col-12">
+        <q-separator />
+        <div class="text-h6 q-my-md">Settings</div>
+        <div class="row q-col-gutter-md items-center">
+              <div class="col-6 col-sm-4 col-md-2">
                 <DistanceInput
                   v-model="state.kerf"
                   :raw-input="state.kerfRaw"
                   :display-settings="dsSettings"
                   outlined
+                  dense
                   label="Kerf (blade thickness)"
                   @update:raw-input="state.kerfRaw = $event"
                 />
               </div>
-              <div class="col-6">
+              <div class="col-6 col-sm-4 col-md-2">
                 <DistanceInput
                   v-model="state.minUsefulRemnant"
                   :raw-input="state.minUsefulRemnantRaw"
                   :display-settings="dsSettings"
                   outlined
+                  dense
                   label="Min useful remnant"
                   @update:raw-input="state.minUsefulRemnantRaw = $event"
                 />
               </div>
-              <div class="col-12">
+              <div class="col-12 col-sm-4 col-md-auto">
                 <q-btn-toggle
                   v-model="state.unitSystem"
                   no-caps
@@ -58,7 +59,7 @@
               <template
                 v-if="state.unitSystem === 'metric'"
               >
-                <div class="col-6">
+                <div class="col-6 col-sm-4 col-md-2">
                   <q-select
                     v-model="state.metricUnitSymbol"
                     :options="metricUnitOptions"
@@ -69,7 +70,7 @@
                     label="Display unit"
                   />
                 </div>
-                <div class="col-6">
+                <div class="col-6 col-sm-4 col-md-2">
                   <q-select
                     v-model="state.metricResolutionMm"
                     :options="metricPrecisionOptions"
@@ -82,7 +83,7 @@
                 </div>
               </template>
               <template v-else>
-                <div class="col-6">
+                <div class="col-6 col-sm-4 col-md-2">
                   <q-select
                     v-model="state.imperialPrecision"
                     :options="imperialPrecisionOptions"
@@ -93,7 +94,7 @@
                     label="Precision"
                   />
                 </div>
-                <div class="col-6">
+                <div class="col-6 col-sm-4 col-md-auto">
                   <q-toggle
                     v-model="state.imperialShowFeet"
                     label="Show feet"
@@ -101,7 +102,7 @@
                   />
                 </div>
               </template>
-              <div class="col-12 col-sm-6">
+              <div class="col-12 col-sm-6 col-md-3">
                 <q-select
                   v-model="state.roundingStrategy"
                   :options="roundingOptions"
@@ -112,194 +113,183 @@
                   label="Rounding"
                 />
               </div>
-            </div>
-          </q-card-section>
-        </q-card>
+        </div>
       </div>
 
       <!-- Stock Inventory -->
       <div class="col-12">
-        <q-card>
-          <q-card-section>
-            <div class="text-h6 q-mb-md">Stock Inventory</div>
+        <q-separator />
+        <div class="text-h6 q-my-md">Stock Inventory</div>
 
-            <q-card
-              v-for="st in state.stockTypes"
-              :key="st.id"
-              flat
-              bordered
-              class="q-mb-md"
-            >
-              <q-card-section>
-                <div class="row items-center q-col-gutter-sm q-mb-sm">
-                  <div class="col">
-                    <q-input
-                      v-model="st.name"
-                      outlined
-                      dense
-                      label="Stock type name"
-                      placeholder="e.g. 2x4"
-                    />
-                  </div>
-                  <div class="col-auto">
-                    <q-btn
-                      flat
-                      dense
-                      round
-                      icon="delete"
-                      color="negative"
-                      :disable="state.stockTypes.length <= 1"
-                      @click="removeStockType(st.id)"
-                    />
-                  </div>
-                </div>
+        <div
+          v-for="(st, stIdx) in state.stockTypes"
+          :key="st.id"
+          class="q-mb-md"
+        >
+          <q-separator v-if="stIdx > 0" class="q-mb-md" />
+          <div class="row items-center q-col-gutter-sm q-mb-sm">
+            <div class="col">
+              <q-input
+                v-model="st.name"
+                outlined
+                dense
+                label="Stock type name"
+                placeholder="e.g. 2x4"
+              />
+            </div>
+            <div class="col-auto">
+              <q-btn
+                flat
+                dense
+                round
+                icon="delete"
+                color="negative"
+                :disable="state.stockTypes.length <= 1"
+                @click="removeStockType(st.id)"
+              />
+            </div>
+          </div>
 
-                <div
-                  v-for="board in st.boards"
-                  :key="board.id"
-                  class="row items-center q-col-gutter-sm q-mb-xs"
-                >
-                  <div class="col">
-                    <DistanceInput
-                      v-model="board.length"
-                      :raw-input="board.lengthRaw"
-                      :display-settings="dsSettings"
-                      outlined
-                      dense
-                      label="Board length"
-                      @update:raw-input="board.lengthRaw = $event"
-                    />
-                  </div>
-                  <div class="col">
-                    <q-input
-                      v-model.number="board.quantity"
-                      type="number"
-                      outlined
-                      dense
-                      label="Quantity"
-                      min="1"
-                    />
-                  </div>
-                  <div class="col">
-                    <q-input
-                      v-model="board.name"
-                      outlined
-                      dense
-                      label="Name (optional)"
-                      placeholder="e.g. From concrete framing"
-                    />
-                  </div>
-                  <div class="col-auto">
-                    <q-btn
-                      flat
-                      dense
-                      round
-                      icon="remove_circle_outline"
-                      color="grey"
-                      :disable="st.boards.length <= 1"
-                      @click="removeBoard(st, board.id)"
-                    />
-                  </div>
-                </div>
+          <div
+            v-for="board in st.boards"
+            :key="board.id"
+            class="row items-center q-col-gutter-sm q-mb-sm"
+          >
+            <div class="col-12 col-sm-5">
+              <DistanceInput
+                v-model="board.length"
+                :raw-input="board.lengthRaw"
+                :display-settings="dsSettings"
+                outlined
+                dense
+                label="Board length"
+                @update:raw-input="board.lengthRaw = $event"
+              />
+            </div>
+            <div class="col-5 col-sm-2">
+              <q-input
+                v-model.number="board.quantity"
+                type="number"
+                outlined
+                dense
+                label="Quantity"
+                min="1"
+              />
+            </div>
+            <div class="col col-sm">
+              <q-input
+                v-model="board.name"
+                outlined
+                dense
+                label="Name (optional)"
+                placeholder="e.g. From concrete framing"
+              />
+            </div>
+            <div class="col-auto">
+              <q-btn
+                flat
+                dense
+                round
+                icon="remove_circle_outline"
+                color="grey"
+                :disable="st.boards.length <= 1"
+                @click="removeBoard(st, board.id)"
+              />
+            </div>
+          </div>
 
-                <q-btn
-                  flat
-                  dense
-                  no-caps
-                  icon="add"
-                  label="Add board length"
-                  class="q-mt-xs"
-                  @click="addBoard(st)"
-                />
-              </q-card-section>
-            </q-card>
+          <q-btn
+            flat
+            dense
+            no-caps
+            icon="add"
+            label="Add board length"
+            class="q-mt-xs"
+            @click="addBoard(st)"
+          />
+        </div>
 
-            <q-btn
-              outline
-              no-caps
-              icon="add"
-              label="Add Stock Type"
-              @click="addStockType"
-            />
-          </q-card-section>
-        </q-card>
+        <q-btn
+          outline
+          no-caps
+          icon="add"
+          label="Add Stock Type"
+          @click="addStockType"
+        />
       </div>
 
       <!-- Required Pieces -->
       <div class="col-12">
-        <q-card>
-          <q-card-section>
-            <div class="text-h6 q-mb-md">Required Pieces</div>
+        <q-separator />
+        <div class="text-h6 q-my-md">Required Pieces</div>
 
-            <div
-              v-for="piece in state.requiredPieces"
-              :key="piece.id"
-              class="row items-center q-col-gutter-sm q-mb-xs"
-            >
-              <div class="col">
-                <q-select
-                  v-model="piece.stockTypeName"
-                  :options="stockTypeNames"
-                  outlined
-                  dense
-                  label="Stock type"
-                  emit-value
-                  map-options
-                />
-              </div>
-              <div class="col">
-                <DistanceInput
-                  v-model="piece.length"
-                  :raw-input="piece.lengthRaw"
-                  :display-settings="dsSettings"
-                  outlined
-                  dense
-                  label="Piece length"
-                  @update:raw-input="piece.lengthRaw = $event"
-                />
-              </div>
-              <div class="col">
-                <q-input
-                  v-model.number="piece.quantity"
-                  type="number"
-                  outlined
-                  dense
-                  label="Quantity"
-                  min="1"
-                />
-              </div>
-              <div class="col">
-                <q-input
-                  v-model="piece.name"
-                  outlined
-                  dense
-                  label="Name (optional)"
-                  placeholder="e.g. Table leg"
-                />
-              </div>
-              <div class="col-auto">
-                <q-btn
-                  flat
-                  dense
-                  round
-                  icon="delete"
-                  color="negative"
-                  :disable="state.requiredPieces.length <= 1"
-                  @click="removeRequiredPiece(piece.id)"
-                />
-              </div>
-            </div>
-
-            <q-btn
-              outline
-              no-caps
-              icon="add"
-              label="Add Required Piece"
-              class="q-mt-sm"
-              @click="addRequiredPiece"
+        <div
+          v-for="piece in state.requiredPieces"
+          :key="piece.id"
+          class="row items-center q-col-gutter-sm q-mb-sm"
+        >
+          <div class="col-12 col-sm-3">
+            <q-select
+              v-model="piece.stockTypeName"
+              :options="stockTypeNames"
+              outlined
+              dense
+              label="Stock type"
+              emit-value
+              map-options
             />
-          </q-card-section>
-        </q-card>
+          </div>
+          <div class="col-12 col-sm-3">
+            <DistanceInput
+              v-model="piece.length"
+              :raw-input="piece.lengthRaw"
+              :display-settings="dsSettings"
+              outlined
+              dense
+              label="Piece length"
+              @update:raw-input="piece.lengthRaw = $event"
+            />
+          </div>
+          <div class="col-5 col-sm-2">
+            <q-input
+              v-model.number="piece.quantity"
+              type="number"
+              outlined
+              dense
+              label="Quantity"
+              min="1"
+            />
+          </div>
+          <div class="col col-sm">
+            <q-input
+              v-model="piece.name"
+              outlined
+              dense
+              label="Name (optional)"
+              placeholder="e.g. Table leg"
+            />
+          </div>
+          <div class="col-auto">
+            <q-btn
+              flat
+              dense
+              round
+              icon="delete"
+              color="negative"
+              :disable="state.requiredPieces.length <= 1"
+              @click="removeRequiredPiece(piece.id)"
+            />
+          </div>
+        </div>
+
+        <q-btn
+          outline
+          no-caps
+          icon="add"
+          label="Add Required Piece"
+          class="q-mt-sm"
+          @click="addRequiredPiece"
+        />
       </div>
 
       <!-- Results -->
@@ -325,47 +315,44 @@
 
         <!-- Summary -->
         <div class="col-12">
-          <q-card>
-            <q-card-section>
-              <div class="text-h6 q-mb-md">Summary</div>
-              <div class="row q-col-gutter-md">
-                <div class="col-6 col-md-2">
-                  <div class="text-subtitle2 text-grey-7">Stock Used</div>
-                  <div class="text-h5">
-                    {{ result.summary.totalStockUsed }} boards
-                  </div>
-                </div>
-                <div class="col-6 col-md-2">
-                  <div class="text-subtitle2 text-grey-7">Efficiency</div>
-                  <div class="text-h5 text-primary">
-                    {{ result.summary.efficiencyPercent.toFixed(1) }}%
-                  </div>
-                </div>
-                <div class="col-6 col-md-3">
-                  <div class="text-subtitle2 text-grey-7">
-                    Preserved Stock
-                  </div>
-                  <div class="text-h5 text-positive">
-                    {{ fmtDist(result.summary.preservedStockLength) }}
-                  </div>
-                </div>
-                <div class="col-6 col-md-2">
-                  <div class="text-subtitle2 text-grey-7">Waste</div>
-                  <div class="text-h5 text-negative">
-                    {{ fmtDist(result.summary.totalWaste) }}
-                  </div>
-                </div>
-                <div class="col-6 col-md-3">
-                  <div class="text-subtitle2 text-grey-7">
-                    Usable Remnants
-                  </div>
-                  <div class="text-h5 text-warning">
-                    {{ fmtDist(result.summary.usableRemnants) }}
-                  </div>
-                </div>
+          <q-separator />
+          <div class="text-h6 q-my-md">Summary</div>
+          <div class="row q-col-gutter-md">
+            <div class="col-6 col-md-2">
+              <div class="text-subtitle2 text-grey-7">Stock Used</div>
+              <div class="text-h5">
+                {{ result.summary.totalStockUsed }} boards
               </div>
-            </q-card-section>
-          </q-card>
+            </div>
+            <div class="col-6 col-md-2">
+              <div class="text-subtitle2 text-grey-7">Efficiency</div>
+              <div class="text-h5 text-primary">
+                {{ result.summary.efficiencyPercent.toFixed(1) }}%
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">
+                Preserved Stock
+              </div>
+              <div class="text-h5 text-positive">
+                {{ fmtDist(result.summary.preservedStockLength) }}
+              </div>
+            </div>
+            <div class="col-6 col-md-2">
+              <div class="text-subtitle2 text-grey-7">Waste</div>
+              <div class="text-h5 text-negative">
+                {{ fmtDist(result.summary.totalWaste) }}
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">
+                Usable Remnants
+              </div>
+              <div class="text-h5 text-warning">
+                {{ fmtDist(result.summary.usableRemnants) }}
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Cut Patterns by Type -->
@@ -374,155 +361,148 @@
           :key="typeName"
           class="col-12"
         >
-          <q-card>
-            <q-card-section>
-              <div class="text-h6 q-mb-md">{{ typeName }} Cut Patterns</div>
+          <q-separator />
+          <div class="text-h6 q-my-md">{{ typeName }} Cut Patterns</div>
 
-              <div
-                v-for="(pattern, pIdx) in patterns"
-                :key="pIdx"
-                class="q-mb-md"
+          <div
+            v-for="(pattern, pIdx) in patterns"
+            :key="pIdx"
+            class="q-mb-md"
+          >
+            <div class="text-subtitle2 q-mb-xs">
+              Board #{{ pIdx + 1 }}
+              ({{ fmtDist(pattern.stockBoard.length) }}){{
+                pattern.stockBoard.name
+                  ? ' — ' + pattern.stockBoard.name
+                  : ''
+              }}
+            </div>
+
+            <!-- Visual bar -->
+            <div
+              :style="{
+                display: 'flex',
+                height: '36px',
+                borderRadius: '4px',
+                overflow: 'hidden',
+                border: '1px solid #ccc',
+              }"
+            >
+              <template
+                v-for="(piece, pieceIdx) in pattern.pieces"
+                :key="'p' + String(pieceIdx)"
               >
-                <div class="text-subtitle2 q-mb-xs">
-                  Board #{{ pIdx + 1 }}
-                  ({{ fmtDist(pattern.stockBoard.length) }}){{
-                    pattern.stockBoard.name
-                      ? ' — ' + pattern.stockBoard.name
-                      : ''
-                  }}
-                </div>
-
-                <!-- Visual bar -->
                 <div
                   :style="{
+                    flexBasis:
+                      toPercent(piece.length, pattern.stockBoard.length) +
+                      '%',
+                    backgroundColor: pieceColor(piece.length),
                     display: 'flex',
-                    height: '36px',
-                    borderRadius: '4px',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     overflow: 'hidden',
-                    border: '1px solid #ccc',
+                    whiteSpace: 'nowrap',
+                    textOverflow: 'ellipsis',
+                    minWidth: '0',
+                    padding: '0 2px',
+                    cursor: 'pointer',
+                  }"
+                  class="text-caption text-white text-center"
+                >
+                  <span
+                    :style="{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }"
+                  >
+                    {{ pieceLabel(piece) }}
+                  </span>
+                  <q-tooltip>
+                    {{ fmtDist(piece.length)
+                    }}{{
+                      piece.name ? ' — ' + piece.name : ''
+                    }}
+                  </q-tooltip>
+                </div>
+                <!-- Kerf gap -->
+                <div
+                  v-if="pieceIdx < pattern.pieces.length - 1"
+                  :style="{
+                    flexBasis:
+                      toPercent(state.kerf, pattern.stockBoard.length) + '%',
+                    backgroundColor: '#212121',
+                    minWidth: '1px',
+                  }"
+                />
+              </template>
+
+              <!-- Remainder -->
+              <div
+                v-if="pattern.remainder > 0"
+                :style="{
+                  flexBasis:
+                    toPercent(
+                      pattern.remainder,
+                      pattern.stockBoard.length,
+                    ) + '%',
+                  backgroundColor: pattern.remainderIsUsable
+                    ? '#FFC107'
+                    : '#BDBDBD',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis',
+                  minWidth: '0',
+                  padding: '0 2px',
+                  cursor: 'pointer',
+                }"
+                class="text-caption text-center"
+              >
+                <span
+                  :style="{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                   }"
                 >
-                  <template
-                    v-for="(piece, pieceIdx) in pattern.pieces"
-                    :key="'p' + String(pieceIdx)"
-                  >
-                    <div
-                      :style="{
-                        flexBasis:
-                          toPercent(piece.length, pattern.stockBoard.length) +
-                          '%',
-                        backgroundColor: pieceColor(piece.length),
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden',
-                        whiteSpace: 'nowrap',
-                        textOverflow: 'ellipsis',
-                        minWidth: '0',
-                        padding: '0 2px',
-                        cursor: 'pointer',
-                      }"
-                      class="text-caption text-white text-center"
-                    >
-                      <span
-                        :style="{
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap',
-                        }"
-                      >
-                        {{ pieceLabel(piece) }}
-                      </span>
-                      <q-tooltip>
-                        {{ fmtDist(piece.length)
-                        }}{{
-                          piece.name ? ' — ' + piece.name : ''
-                        }}
-                      </q-tooltip>
-                    </div>
-                    <!-- Kerf gap -->
-                    <div
-                      v-if="pieceIdx < pattern.pieces.length - 1"
-                      :style="{
-                        flexBasis:
-                          toPercent(state.kerf, pattern.stockBoard.length) + '%',
-                        backgroundColor: '#212121',
-                        minWidth: '1px',
-                      }"
-                    />
-                  </template>
-
-                  <!-- Remainder -->
-                  <div
-                    v-if="pattern.remainder > 0"
-                    :style="{
-                      flexBasis:
-                        toPercent(
-                          pattern.remainder,
-                          pattern.stockBoard.length,
-                        ) + '%',
-                      backgroundColor: pattern.remainderIsUsable
-                        ? '#FFC107'
-                        : '#BDBDBD',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      overflow: 'hidden',
-                      whiteSpace: 'nowrap',
-                      textOverflow: 'ellipsis',
-                      minWidth: '0',
-                      padding: '0 2px',
-                      cursor: 'pointer',
-                    }"
-                    class="text-caption text-center"
-                  >
-                    <span
-                      :style="{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }"
-                    >
-                      {{ fmtDist(pattern.remainder) }}
-                      {{ pattern.remainderIsUsable ? 'usable' : 'waste' }}
-                    </span>
-                    <q-tooltip>
-                      {{ fmtDist(pattern.remainder) }} —
-                      {{ pattern.remainderIsUsable ? 'Usable remnant' : 'Waste' }}
-                    </q-tooltip>
-                  </div>
-                </div>
-
-                <!-- Text summary -->
-                <div class="text-caption text-grey-7 q-mt-xs">
-                  Pieces:
-                  {{
-                    pattern.pieces
-                      .map(
-                        (p) =>
-                          (p.name ? p.name + ' ' : '') + fmtDist(p.length),
-                      )
-                      .join(', ')
-                  }}
-                  &nbsp;|&nbsp; Kerf: {{ fmtDist(pattern.totalKerf) }}
-                  &nbsp;|&nbsp; Remainder:
                   {{ fmtDist(pattern.remainder) }}
-                  ({{ pattern.remainderIsUsable ? 'usable' : 'waste' }})
-                </div>
+                  {{ pattern.remainderIsUsable ? 'usable' : 'waste' }}
+                </span>
+                <q-tooltip>
+                  {{ fmtDist(pattern.remainder) }} —
+                  {{ pattern.remainderIsUsable ? 'Usable remnant' : 'Waste' }}
+                </q-tooltip>
               </div>
-            </q-card-section>
-          </q-card>
+            </div>
+
+            <!-- Text summary -->
+            <div class="text-caption text-grey-7 q-mt-xs">
+              Pieces:
+              {{
+                pattern.pieces
+                  .map(
+                    (p) =>
+                      (p.name ? p.name + ' ' : '') + fmtDist(p.length),
+                  )
+                  .join(', ')
+              }}
+              &nbsp;|&nbsp; Kerf: {{ fmtDist(pattern.totalKerf) }}
+              &nbsp;|&nbsp; Remainder:
+              {{ fmtDist(pattern.remainder) }}
+              ({{ pattern.remainderIsUsable ? 'usable' : 'waste' }})
+            </div>
+          </div>
         </div>
       </template>
 
       <!-- Empty state -->
-      <div v-else class="col-12">
-        <q-card>
-          <q-card-section class="text-center text-grey-5">
-            Fill in stock inventory and required pieces to see optimized cut
-            patterns
-          </q-card-section>
-        </q-card>
+      <div v-else class="col-12 text-center text-grey-5 q-pa-lg">
+        Fill in stock inventory and required pieces to see optimized cut
+        patterns
       </div>
     </div>
 

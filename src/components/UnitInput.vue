@@ -7,6 +7,7 @@
     :disable="disable"
     :error="hasError"
     :error-message="errorMessage"
+    hide-bottom-space
     @update:model-value="onInput"
     @focus="onFocus"
     @blur="onBlur"

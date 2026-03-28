@@ -1,85 +1,18 @@
-// --- Input types ---
-
-export interface StockBoard {
-  id: string;
-  stockTypeName: string;
-  length: number;
-  name?: string;
-}
-
-export interface StockType {
-  name: string;
-  boards: StockBoard[];
-}
-
-export interface RequiredPiece {
-  stockTypeName: string;
-  length: number;
-  quantity: number;
-  name?: string;
-}
-
-export interface CutOptimizerInput {
-  stockTypes: StockType[];
-  requiredPieces: RequiredPiece[];
-  kerf: number;
-  minUsefulRemnant: number;
-}
-
-// --- Output types ---
-
-export interface PlacedPiece {
-  length: number;
-  startOffset: number;
-  name?: string;
-}
-
-export interface CutPattern {
-  stockBoard: StockBoard;
-  pieces: PlacedPiece[];
-  totalKerf: number;
-  remainder: number;
-  remainderIsUsable: boolean;
-}
-
-export interface UnfulfilledPiece {
-  stockTypeName: string;
-  length: number;
-  quantity: number;
-  reason: string;
-  name?: string;
-}
-
-export interface CutOptimizerResult {
-  patternsByType: Record<string, CutPattern[]>;
-  unfulfilled: UnfulfilledPiece[];
-  summary: {
-    totalStockUsed: number;
-    totalStockLength: number;
-    totalPiecesLength: number;
-    totalKerf: number;
-    totalWaste: number;
-    usableRemnants: number;
-    preservedStockLength: number;
-    efficiencyPercent: number;
-  };
-}
-
-// ============================================================
-// Internal types for FFD algorithm
-// ============================================================
-
-interface DemandItem {
-  length: number;
-  name?: string;
-}
-
-interface OpenBoard {
-  stockBoard: StockBoard;
-  pieces: DemandItem[];
-  usedLength: number;
-  remainingCapacity: number;
-}
+import type {
+  CutOptimizerInput,
+  CutOptimizerResult,
+  CutPattern,
+  DemandItem,
+  OpenBoard,
+  RequiredPiece,
+  StockBoard,
+  UnfulfilledPiece,
+} from './types';
+import {
+  aggregateUnfulfilled,
+  buildCutPatterns,
+  computeSummary,
+} from './buildOutput';
 
 // ============================================================
 // Phase 1: Expand demand & validate
@@ -194,81 +127,6 @@ function ffdPlace(
 }
 
 // ============================================================
-// Phase 3: Build output
-// ============================================================
-
-function buildCutPatterns(
-  openBoards: OpenBoard[],
-  kerf: number,
-  minUsefulRemnant: number,
-): CutPattern[] {
-  const patterns: CutPattern[] = [];
-
-  for (const board of openBoards) {
-    const placedPieces: PlacedPiece[] = [];
-    let offset = 0;
-
-    for (let i = 0; i < board.pieces.length; i++) {
-      const item = board.pieces[i]!;
-      if (i > 0) offset += kerf;
-
-      const piece: PlacedPiece = {
-        length: item.length,
-        startOffset: offset,
-      };
-      if (item.name) piece.name = item.name;
-      placedPieces.push(piece);
-      offset += item.length;
-    }
-
-    const n = placedPieces.length;
-    const piecesLen = placedPieces.reduce((s, p) => s + p.length, 0);
-    const betweenKerf = Math.max(0, n - 1) * kerf;
-    // Trailing kerf (trim cut after last piece) only if enough board remains
-    const rawRemainder = board.stockBoard.length - piecesLen - betweenKerf;
-    const trailingKerf = rawRemainder >= kerf ? kerf : 0;
-    const totalKerf = betweenKerf + trailingKerf;
-    const remainder = board.stockBoard.length - piecesLen - totalKerf;
-
-    patterns.push({
-      stockBoard: board.stockBoard,
-      pieces: placedPieces,
-      totalKerf,
-      remainder,
-      remainderIsUsable: remainder >= minUsefulRemnant,
-    });
-  }
-
-  return patterns;
-}
-
-function aggregateUnfulfilled(
-  items: DemandItem[],
-  typeName: string,
-): UnfulfilledPiece[] {
-  const groups = new Map<string, UnfulfilledPiece>();
-
-  for (const item of items) {
-    const key = `${String(item.length)}|${item.name ?? ''}`;
-    const existing = groups.get(key);
-    if (existing) {
-      existing.quantity++;
-    } else {
-      const uf: UnfulfilledPiece = {
-        stockTypeName: typeName,
-        length: item.length,
-        quantity: 1,
-        reason: 'Not enough stock available',
-      };
-      if (item.name) uf.name = item.name;
-      groups.set(key, uf);
-    }
-  }
-
-  return [...groups.values()];
-}
-
-// ============================================================
 // Per-type solver
 // ============================================================
 
@@ -355,55 +213,9 @@ export function optimizeCuts(input: CutOptimizerInput): CutOptimizerResult {
     allUnfulfilled.push(...result.unfulfilled);
   }
 
-  // Compute summary
-  let totalStockUsed = 0;
-  let totalStockLength = 0;
-  let totalPiecesLength = 0;
-  let totalKerf = 0;
-  let totalWaste = 0;
-  let usableRemnants = 0;
-
-  for (const patterns of Object.values(patternsByType)) {
-    for (const p of patterns) {
-      totalStockUsed++;
-      totalStockLength += p.stockBoard.length;
-      totalKerf += p.totalKerf;
-      for (const piece of p.pieces) {
-        totalPiecesLength += piece.length;
-      }
-      if (p.remainderIsUsable) {
-        usableRemnants += p.remainder;
-      } else {
-        totalWaste += p.remainder;
-      }
-    }
-  }
-
-  let totalInputStockLength = 0;
-  for (const st of input.stockTypes) {
-    for (const b of st.boards) {
-      totalInputStockLength += b.length;
-    }
-  }
-  const preservedStockLength = totalInputStockLength - totalStockLength;
-
-  const efficiencyPercent =
-    totalStockLength > 0
-      ? (totalPiecesLength / totalStockLength) * 100
-      : 0;
-
   return {
     patternsByType,
     unfulfilled: allUnfulfilled,
-    summary: {
-      totalStockUsed,
-      totalStockLength,
-      totalPiecesLength,
-      totalKerf,
-      totalWaste,
-      usableRemnants,
-      preservedStockLength,
-      efficiencyPercent,
-    },
+    summary: computeSummary(patternsByType, input.stockTypes, minUsefulRemnant),
   };
 }

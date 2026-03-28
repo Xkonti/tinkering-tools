@@ -116,6 +116,140 @@
         </div>
       </div>
 
+      <!-- Algorithm Settings -->
+      <div class="col-12">
+        <q-separator />
+        <div class="text-h6 q-my-md">Algorithm</div>
+        <div class="row q-col-gutter-md items-center">
+          <div class="col-12 col-sm-auto">
+            <q-btn-toggle
+              v-model="state.algorithm"
+              no-caps
+              rounded
+              toggle-color="primary"
+              :options="[
+                { label: 'FFD (Fast)', value: 'ffd' },
+                { label: 'Branch & Bound (Optimal)', value: 'branchAndBound' },
+              ]"
+            />
+          </div>
+          <template v-if="state.algorithm === 'branchAndBound'">
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.bnbTimeLimitMs"
+                type="number"
+                outlined
+                dense
+                label="Time limit (ms)"
+                min="1000"
+                step="1000"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Maximum time the algorithm will search for a better
+                      solution, in milliseconds. The search stops after this
+                      time and returns the best result found so far.
+                      180 000 ms = 3 minutes.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.boardUsePenalty"
+                type="number"
+                outlined
+                dense
+                label="Board use penalty"
+                step="10"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Flat cost added to the score for every board that is
+                      used. Higher values push the optimizer to pack pieces
+                      onto fewer boards. Lower values allow spreading pieces
+                      across more boards if that reduces waste.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.wastePenalty"
+                type="number"
+                outlined
+                dense
+                label="Waste penalty"
+                step="0.1"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Cost per unit length of wasted material (remainders
+                      too short to be useful, plus any unused stock boards
+                      shorter than the minimum useful remnant). Higher values
+                      make the optimizer try harder to eliminate small scraps.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.leftoverBonus"
+                type="number"
+                outlined
+                dense
+                label="Leftover bonus"
+                step="5"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Reward multiplier for usable leftover pieces
+                      (remainders at least as long as the minimum useful
+                      remnant). Higher values make the optimizer prefer
+                      layouts that leave long, reusable offcuts rather than
+                      many short waste pieces. Works together with the
+                      leftover value curve.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.leftoverPower"
+                type="number"
+                outlined
+                dense
+                label="Leftover value curve"
+                step="0.1"
+                min="0.1"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Exponent that controls how much longer leftovers are
+                      valued over shorter ones. At 1.0 the value grows
+                      linearly with length. Values above 1.0 make long
+                      leftovers disproportionately more valuable (e.g. at
+                      1.5, a leftover twice as long is worth ~2.8x more).
+                      Values below 1.0 flatten the curve, treating all
+                      usable leftovers more equally.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <!-- Stock Inventory -->
       <div class="col-12">
         <q-separator />
@@ -290,6 +424,52 @@
           class="q-mt-sm"
           @click="addRequiredPiece"
         />
+      </div>
+
+      <!-- Calculate button -->
+      <div class="col-12">
+        <q-separator />
+        <div class="row items-center q-col-gutter-md q-my-md">
+          <div class="col-auto">
+            <q-btn
+              color="primary"
+              label="Calculate"
+              icon="calculate"
+              no-caps
+              :loading="isRunning"
+              :disable="!inputValid"
+              @click="calculate"
+            />
+          </div>
+          <div v-if="isRunning" class="col-auto">
+            <q-btn
+              flat
+              no-caps
+              label="Cancel"
+              icon="cancel"
+              color="negative"
+              @click="cancelCalculation"
+            />
+          </div>
+          <div v-if="lastStats" class="col text-caption text-grey-7">
+            {{ lastStats.totalNodesExplored.toLocaleString() }} nodes explored
+            in {{ (lastStats.totalElapsedMs / 1000).toFixed(1) }}s
+            {{ lastStats.exhaustive ? '(exhaustive)' : '(time limit)' }}
+          </div>
+        </div>
+        <q-linear-progress
+          v-if="isRunning && state.algorithm === 'branchAndBound'"
+          indeterminate
+          color="primary"
+          class="q-mb-sm"
+        />
+        <div v-if="isRunning && state.algorithm === 'branchAndBound'" class="text-caption text-grey-7 q-mb-sm">
+          {{ (elapsedMs / 1000).toFixed(1) }}s elapsed
+          <template v-if="progress">
+            &nbsp;|&nbsp; {{ progress.nodesExplored.toLocaleString() }} nodes
+            &nbsp;|&nbsp; Best: {{ progress.boardsUsedInBest }} boards used
+          </template>
+        </div>
       </div>
 
       <!-- Results -->
@@ -501,8 +681,7 @@
 
       <!-- Empty state -->
       <div v-else class="col-12 text-center text-grey-5 q-pa-lg">
-        Fill in stock inventory and required pieces to see optimized cut
-        patterns
+        Fill in stock inventory and required pieces, then click Calculate
       </div>
     </div>
 
@@ -547,11 +726,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import { storeToRefs } from 'pinia';
-import { optimizeCuts } from 'src/utils/boardCutOptimizer';
+import { CutOptimizerWorker } from 'src/utils/boardCutOptimizer';
 import type {
+  BnBProgress,
+  BnBStats,
   CutOptimizerInput,
   CutOptimizerResult,
   CutPattern,
@@ -689,6 +870,19 @@ function fmtDist(mm: number): string {
 
 // --- Optimization ---
 
+const workerClient = new CutOptimizerWorker();
+const result = ref<CutOptimizerResult | null>(null);
+const isRunning = ref(false);
+const elapsedMs = ref(0);
+const progress = ref<BnBProgress | null>(null);
+const lastStats = ref<BnBStats | null>(null);
+let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+onUnmounted(() => {
+  if (elapsedTimer) clearInterval(elapsedTimer);
+  workerClient.dispose();
+});
+
 function buildInput(): CutOptimizerInput | null {
   const k = state.value.kerf;
   const minR = state.value.minUsefulRemnant;
@@ -741,15 +935,53 @@ function buildInput(): CutOptimizerInput | null {
   };
 }
 
-const result = ref<CutOptimizerResult | null>(null);
-watch(
-  state,
-  () => {
-    const inp = buildInput();
-    result.value = inp ? optimizeCuts(inp) : null;
-  },
-  { deep: true, immediate: true },
-);
+const inputValid = computed(() => buildInput() !== null);
+
+async function calculate() {
+  const inp = buildInput();
+  if (!inp) return;
+
+  workerClient.cancel();
+  isRunning.value = true;
+  elapsedMs.value = 0;
+  progress.value = null;
+  lastStats.value = null;
+
+  const startTime = Date.now();
+  elapsedTimer = setInterval(() => {
+    elapsedMs.value = Date.now() - startTime;
+  }, 100);
+
+  try {
+    if (state.value.algorithm === 'ffd') {
+      result.value = await workerClient.runFfd(inp);
+    } else {
+      const { result: r, stats } = await workerClient.runBnB(
+        inp,
+        {
+          scoringParams: { ...state.value.scoringParams },
+          timeLimitMs: state.value.bnbTimeLimitMs,
+        },
+        (p) => {
+          progress.value = { ...p };
+        },
+      );
+      result.value = r;
+      lastStats.value = stats ?? null;
+    }
+  } catch (e) {
+    if ((e as Error).message !== 'Cancelled') {
+      $q.notify({ type: 'negative', message: `Calculation error: ${(e as Error).message}` });
+    }
+  } finally {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+    isRunning.value = false;
+  }
+}
+
+function cancelCalculation() {
+  workerClient.cancel();
+}
 
 const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
   if (!result.value) return [];

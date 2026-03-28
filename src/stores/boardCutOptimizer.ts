@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { computed } from 'vue';
 import { useToolProjects } from 'src/composables/useToolProjects';
 import type { DisplaySettings, RoundingStrategy } from 'src/utils/units';
+import type { AlgorithmChoice, ScoringParams } from 'src/utils/boardCutOptimizer';
+import { DEFAULT_SCORING_PARAMS } from 'src/utils/boardCutOptimizer';
 
 export interface StockTypeInput {
   id: string;
@@ -31,6 +33,10 @@ export interface BoardCutOptimizerState {
   minUsefulRemnantRaw: string;
   stockTypes: StockTypeInput[];
   requiredPieces: RequiredPieceInput[];
+  // Algorithm settings (per-project)
+  algorithm: AlgorithmChoice;
+  scoringParams: ScoringParams;
+  bnbTimeLimitMs: number;
   // Display settings (per-project)
   unitSystem: 'imperial' | 'metric';
   metricUnitSymbol: DisplaySettings['metricUnitSymbol'];
@@ -165,6 +171,9 @@ function migrateLegacyData(): BoardCutOptimizerState | undefined {
   return {
     kerf, kerfRaw, minUsefulRemnant, minUsefulRemnantRaw,
     stockTypes, requiredPieces,
+    algorithm: 'branchAndBound' as const,
+    scoringParams: { ...DEFAULT_SCORING_PARAMS },
+    bnbTimeLimitMs: 180_000,
     ...ds,
   };
 }
@@ -193,6 +202,9 @@ function createDefaults(): BoardCutOptimizerState {
         name: '',
       },
     ],
+    algorithm: 'branchAndBound',
+    scoringParams: { ...DEFAULT_SCORING_PARAMS },
+    bnbTimeLimitMs: 180_000,
     unitSystem: 'imperial',
     metricUnitSymbol: 'cm',
     metricResolutionMm: 1,
@@ -220,19 +232,28 @@ export const useBoardCutOptimizerStore = defineStore(
       completeImport,
     } = useToolProjects<BoardCutOptimizerState>({
       toolId: 'board-cut-optimizer',
-      currentVersion: 1,
+      currentVersion: 2,
       importers: {
-        1: (raw: unknown) => raw as BoardCutOptimizerState,
+        1: (raw: unknown) => ({
+          ...(raw as Omit<BoardCutOptimizerState, 'algorithm' | 'scoringParams' | 'bnbTimeLimitMs'>),
+          algorithm: 'branchAndBound' as const,
+          scoringParams: { ...DEFAULT_SCORING_PARAMS },
+          bnbTimeLimitMs: 180_000,
+        }),
+        2: (raw: unknown) => raw as BoardCutOptimizerState,
       },
       defaults: createDefaults,
       migrate: migrateLegacyData,
     });
 
-    // When creating a new project, carry over display settings from the current project
+    // When creating a new project, carry over display + algorithm settings from the current project
     function createProject(name: string): string {
       const defaults = createDefaults();
       return rawCreateProject(name, {
         ...defaults,
+        algorithm: state.value.algorithm,
+        scoringParams: { ...state.value.scoringParams },
+        bnbTimeLimitMs: state.value.bnbTimeLimitMs,
         unitSystem: state.value.unitSystem,
         metricUnitSymbol: state.value.metricUnitSymbol,
         metricResolutionMm: state.value.metricResolutionMm,

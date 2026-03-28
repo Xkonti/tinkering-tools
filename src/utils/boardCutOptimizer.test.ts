@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   optimizeCuts,
+  optimizeCutsBnB,
+  scoreSolution,
+  DEFAULT_SCORING_PARAMS,
   type CutOptimizerInput,
   type CutOptimizerResult,
+  type ScoringParams,
 } from './boardCutOptimizer';
 
 // --- Helpers ---
@@ -853,5 +857,304 @@ describe('boardCutOptimizer', () => {
       const boards = usedBoards(result, '2x4');
       expect(boards.every((b) => b.boardLength === 92.5)).toBe(true);
     });
+  });
+
+  describe('unused short boards count as waste', () => {
+    it('counts unused boards shorter than minUsefulRemnant as waste', () => {
+      const result = optimizeCuts(
+        makeInput({
+          stockTypes: [
+            {
+              name: '2x4',
+              boards: [
+                { length: 96, quantity: 1 },
+                { length: 5, quantity: 3 },
+              ],
+            },
+          ],
+          pieces: [{ stockTypeName: '2x4', length: 22, quantity: 1 }],
+          kerf: 0.25,
+          minUsefulRemnant: 10,
+        }),
+      );
+
+      // 3 unused 5" boards < 10" minUsefulRemnant = 15" waste from unused boards
+      // 1 used 96" board with 22" piece: remainder = 96 - 22 - 0.25 = 73.75 (usable)
+      expect(result.summary.totalWaste).toBeCloseTo(15, 6);
+      expect(result.summary.preservedStockLength).toBe(0);
+      expect(result.summary.usableRemnants).toBeCloseTo(73.75, 6);
+    });
+
+    it('counts unused boards >= minUsefulRemnant as preserved stock', () => {
+      const result = optimizeCuts(
+        makeInput({
+          stockTypes: [
+            {
+              name: '2x4',
+              boards: [
+                { length: 96, quantity: 1 },
+                { length: 24, quantity: 2 },
+              ],
+            },
+          ],
+          pieces: [{ stockTypeName: '2x4', length: 22, quantity: 1 }],
+          kerf: 0.25,
+          minUsefulRemnant: 10,
+        }),
+      );
+
+      // 22" piece opens shortest fitting board (24")
+      // Unused: 1x 96" (preserved) + 1x 24" (preserved) = 120"
+      expect(result.summary.preservedStockLength).toBe(120);
+    });
+  });
+});
+
+// ============================================================
+// B&B Algorithm Tests
+// ============================================================
+
+function runBnB(input: CutOptimizerInput, params?: Partial<ScoringParams>) {
+  return optimizeCutsBnB(
+    input,
+    {
+      scoringParams: { ...DEFAULT_SCORING_PARAMS, ...params },
+      timeLimitMs: 10_000,
+    },
+    () => {},
+  );
+}
+
+describe('optimizeCutsBnB', () => {
+  it('places all pieces and produces valid result', () => {
+    const input = makeInput({
+      stockTypes: [{ name: '2x4', boards: [{ length: 96, quantity: 5 }] }],
+      pieces: [{ stockTypeName: '2x4', length: 22, quantity: 4 }],
+      kerf: 0.25,
+    });
+    const { result } = runBnB(input);
+
+    expect(result.unfulfilled).toHaveLength(0);
+    expect(totalPiecesPlaced(result)).toBe(4);
+  });
+
+  it('produces result at least as good as FFD (user scenario 1)', () => {
+    const input = makeInput({
+      stockTypes: [
+        {
+          name: '2x4',
+          boards: [
+            { length: 92.5, quantity: 11 },
+            { length: 24, quantity: 4 },
+          ],
+        },
+      ],
+      pieces: [{ stockTypeName: '2x4', length: 22, quantity: 10 }],
+      kerf: 0.25,
+      minUsefulRemnant: 10,
+    });
+
+    const ffdResult = optimizeCuts(input);
+    const { result: bnbResult } = runBnB(input);
+
+    expect(bnbResult.unfulfilled).toHaveLength(0);
+    expect(totalPiecesPlaced(bnbResult)).toBe(10);
+
+    // B&B should use no more boards than FFD
+    expect(bnbResult.summary.totalStockUsed).toBeLessThanOrEqual(
+      ffdResult.summary.totalStockUsed,
+    );
+  });
+
+  it('produces result at least as good as FFD (user scenario 2)', () => {
+    const input = makeInput({
+      stockTypes: [
+        {
+          name: '2x4',
+          boards: [
+            { length: 92.5, quantity: 10 },
+            { length: 26.9375, quantity: 4 },
+          ],
+        },
+      ],
+      pieces: [
+        { stockTypeName: '2x4', length: 21, quantity: 10, name: 'leg' },
+        { stockTypeName: '2x4', length: 5.3125, quantity: 12, name: 'bit' },
+      ],
+      kerf: 0.125,
+      minUsefulRemnant: 10,
+    });
+
+    const ffdResult = optimizeCuts(input);
+    const { result: bnbResult } = runBnB(input);
+
+    expect(bnbResult.unfulfilled).toHaveLength(0);
+    expect(totalPiecesPlaced(bnbResult)).toBe(22);
+
+    const ffdScore = scoreSolution(
+      Object.values(ffdResult.patternsByType).flat(),
+      input.stockTypes.flatMap((st) => st.boards),
+      input.minUsefulRemnant,
+      DEFAULT_SCORING_PARAMS,
+    );
+    const bnbScore = scoreSolution(
+      Object.values(bnbResult.patternsByType).flat(),
+      input.stockTypes.flatMap((st) => st.boards),
+      input.minUsefulRemnant,
+      DEFAULT_SCORING_PARAMS,
+    );
+
+    expect(bnbScore).toBeLessThanOrEqual(ffdScore + 1e-6);
+  });
+
+  it('short-circuits when FFD produces zero waste', () => {
+    const input = makeInput({
+      stockTypes: [
+        { name: '2x4', boards: [{ length: 22, quantity: 2 }] },
+      ],
+      pieces: [{ stockTypeName: '2x4', length: 22, quantity: 2 }],
+      kerf: 0.125,
+    });
+
+    const { result, stats } = runBnB(input);
+
+    expect(result.unfulfilled).toHaveLength(0);
+    expect(totalPiecesPlaced(result)).toBe(2);
+    // Should short-circuit: 0 nodes explored
+    expect(stats.totalNodesExplored).toBe(0);
+    expect(stats.exhaustive).toBe(true);
+  });
+
+  it('respects time limit and returns best found so far', () => {
+    const input = makeInput({
+      stockTypes: [
+        { name: '2x4', boards: [{ length: 96, quantity: 10 }] },
+      ],
+      pieces: [{ stockTypeName: '2x4', length: 10, quantity: 15 }],
+      kerf: 0.25,
+    });
+
+    const { result, stats } = optimizeCutsBnB(
+      input,
+      {
+        scoringParams: { ...DEFAULT_SCORING_PARAMS },
+        timeLimitMs: 50, // Very short time limit
+      },
+      () => {},
+    );
+
+    // Should still produce a valid result (from FFD warm start)
+    expect(result.unfulfilled).toHaveLength(0);
+    expect(totalPiecesPlaced(result)).toBe(15);
+    // Should have hit the time limit (not exhaustive)
+    expect(stats.totalElapsedMs).toBeLessThan(500);
+  });
+
+  it('handles unfulfilled pieces (too long)', () => {
+    const input = makeInput({
+      stockTypes: [
+        { name: '2x4', boards: [{ length: 48, quantity: 5 }] },
+      ],
+      pieces: [{ stockTypeName: '2x4', length: 50, quantity: 3 }],
+    });
+
+    const { result } = runBnB(input);
+    expect(result.unfulfilled).toHaveLength(1);
+    expect(result.unfulfilled[0]!.quantity).toBe(3);
+  });
+
+  it('handles multiple stock types independently', () => {
+    const input = makeInput({
+      stockTypes: [
+        { name: '2x4', boards: [{ length: 96, quantity: 5 }] },
+        { name: '1x6', boards: [{ length: 72, quantity: 5 }] },
+      ],
+      pieces: [
+        { stockTypeName: '2x4', length: 22, quantity: 2 },
+        { stockTypeName: '1x6', length: 30, quantity: 2 },
+      ],
+    });
+
+    const { result } = runBnB(input);
+    expect(result.unfulfilled).toHaveLength(0);
+    expect(result.patternsByType['2x4']).toBeDefined();
+    expect(result.patternsByType['1x6']).toBeDefined();
+  });
+});
+
+// ============================================================
+// Scoring Function Tests
+// ============================================================
+
+describe('scoreSolution', () => {
+  it('returns lower score for fewer boards used', () => {
+    const input1 = makeInput({
+      stockTypes: [{ name: '2x4', boards: [{ length: 96, quantity: 3 }] }],
+      pieces: [{ stockTypeName: '2x4', length: 22, quantity: 4 }],
+      kerf: 0.25,
+    });
+    const input2 = makeInput({
+      stockTypes: [{ name: '2x4', boards: [{ length: 24, quantity: 4 }] }],
+      pieces: [{ stockTypeName: '2x4', length: 22, quantity: 4 }],
+      kerf: 0.25,
+    });
+
+    const result1 = optimizeCuts(input1); // 1 board
+    const result2 = optimizeCuts(input2); // 4 boards
+
+    const score1 = scoreSolution(
+      Object.values(result1.patternsByType).flat(),
+      input1.stockTypes.flatMap((st) => st.boards),
+      input1.minUsefulRemnant,
+      DEFAULT_SCORING_PARAMS,
+    );
+    const score2 = scoreSolution(
+      Object.values(result2.patternsByType).flat(),
+      input2.stockTypes.flatMap((st) => st.boards),
+      input2.minUsefulRemnant,
+      DEFAULT_SCORING_PARAMS,
+    );
+
+    // Using 1 board should score better than 4 boards (lower = better)
+    expect(score1).toBeLessThan(score2);
+  });
+
+  it('unused short boards add waste penalty', () => {
+    const input = makeInput({
+      stockTypes: [
+        {
+          name: '2x4',
+          boards: [
+            { length: 96, quantity: 1 },
+            { length: 5, quantity: 1 },
+          ],
+        },
+      ],
+      pieces: [{ stockTypeName: '2x4', length: 22, quantity: 1 }],
+      kerf: 0.25,
+      minUsefulRemnant: 10,
+    });
+
+    const result = optimizeCuts(input);
+    const patterns = Object.values(result.patternsByType).flat();
+    const allBoards = input.stockTypes.flatMap((st) => st.boards);
+
+    const score = scoreSolution(
+      patterns,
+      allBoards,
+      10,
+      DEFAULT_SCORING_PARAMS,
+    );
+
+    // Score should include waste penalty for the unused 5" board
+    // If we remove the short board, score should be lower
+    const scoreSansShort = scoreSolution(
+      patterns,
+      allBoards.filter((b) => b.length !== 5),
+      10,
+      DEFAULT_SCORING_PARAMS,
+    );
+
+    expect(scoreSansShort).toBeLessThan(score);
   });
 });

@@ -1146,8 +1146,7 @@ describe('scoreSolution', () => {
       DEFAULT_SCORING_PARAMS,
     );
 
-    // Score should include waste penalty for the unused 5" board
-    // If we remove the short board, score should be lower
+    // Unused boards don't affect score — only used boards contribute
     const scoreSansShort = scoreSolution(
       patterns,
       allBoards.filter((b) => b.length !== 5),
@@ -1155,7 +1154,7 @@ describe('scoreSolution', () => {
       DEFAULT_SCORING_PARAMS,
     );
 
-    expect(scoreSansShort).toBeLessThan(score);
+    expect(scoreSansShort).toBe(score);
   });
 });
 
@@ -1205,8 +1204,8 @@ describe('B&B optimizations', () => {
     expect(bnbScore).toBeLessThanOrEqual(ffdScore + 1e-6);
   });
 
-  it('stagnation detection triggers and returns valid result', () => {
-    // Large problem that will trigger stagnation before time limit
+  it('time limit terminates search and returns valid result', () => {
+    // Large problem that won't finish in the short time limit
     const input = makeInput({
       stockTypes: [
         {
@@ -1230,12 +1229,12 @@ describe('B&B optimizations', () => {
       input,
       {
         scoringParams: { ...DEFAULT_SCORING_PARAMS },
-        timeLimitMs: 300_000, // 5 min — long enough that stagnation hits first
+        timeLimitMs: 500, // short time limit to force early termination
       },
       () => {},
     );
 
-    // Should produce a valid result
+    // Should produce a valid result from warm start even if B&B didn't finish
     expect(result.unfulfilled).toHaveLength(0);
     expect(totalPiecesPlaced(result)).toBe(30);
     // Should have explored nodes

@@ -3,6 +3,7 @@ import type { CutPattern, ScoringParams, StockBoard } from './types';
 export const DEFAULT_SCORING_PARAMS: ScoringParams = {
   boardUsePenalty: 100,
   wastePenalty: 1,
+  wastePower: 1,
   leftoverBonus: 50,
   leftoverPower: 1.5,
 };
@@ -16,12 +17,23 @@ function leftoverValue(
   return Math.pow(length / maxBoardLength, power);
 }
 
+function wasteValue(
+  length: number,
+  maxBoardLength: number,
+  power: number,
+): number {
+  if (maxBoardLength <= 0) return 0;
+  // When power=1: length * pow(length/max, 0) = length (backward compatible)
+  // When power>1: larger waste pieces penalized disproportionately
+  return length * Math.pow(length / maxBoardLength, power - 1);
+}
+
 /**
  * Score a complete solution. Lower is better.
  *
  * score = boardUsePenalty * boards_used
- *       + wastePenalty * total_waste
- *       - leftoverBonus * SUM(leftover_value(usable_remainder))
+ *       + wastePenalty * SUM(waste_value(waste_remainders))
+ *       - leftoverBonus * SUM(leftover_value(usable_remainders))
  *
  * Unused boards >= minUsefulRemnant get leftover bonus.
  * Unused boards < minUsefulRemnant count as waste.
@@ -36,8 +48,6 @@ export function scoreSolution(
     (max, b) => Math.max(max, b.length),
     0,
   );
-  const usedBoardIds = new Set(patterns.map((p) => p.stockBoard.id));
-
   let score = 0;
 
   // Cost per board used
@@ -50,21 +60,119 @@ export function scoreSolution(
         params.leftoverBonus *
         leftoverValue(p.remainder, maxBoardLength, params.leftoverPower);
     } else {
-      score += params.wastePenalty * p.remainder;
+      score +=
+        params.wastePenalty *
+        wasteValue(p.remainder, maxBoardLength, params.wastePower);
     }
   }
 
-  // Unused boards
-  for (const board of allBoards) {
-    if (usedBoardIds.has(board.id)) continue;
-    if (board.length >= minUsefulRemnant) {
-      score -=
-        params.leftoverBonus *
-        leftoverValue(board.length, maxBoardLength, params.leftoverPower);
-    } else {
-      score += params.wastePenalty * board.length;
-    }
-  }
+  // Unused boards: no score contribution (stock on the shelf is neutral)
 
   return score;
+}
+
+/**
+ * Score breakdown for a single board or unused board.
+ */
+export interface BoardScoreBreakdown {
+  boardUsePenalty: number;
+  wasteContribution: number;
+  leftoverContribution: number;
+  total: number;
+}
+
+export interface ScoreBreakdown {
+  usedBoards: {
+    boardName: string;
+    boardLength: number;
+    remainder: number;
+    remainderIsUsable: boolean;
+    breakdown: BoardScoreBreakdown;
+  }[];
+  unusedBoards: {
+    boardName: string;
+    boardLength: number;
+    isUsable: boolean;
+    breakdown: BoardScoreBreakdown;
+  }[];
+  totals: {
+    boardUsePenalty: number;
+    wasteContribution: number;
+    leftoverContribution: number;
+    total: number;
+  };
+}
+
+export function computeScoreBreakdown(
+  patterns: CutPattern[],
+  allBoards: StockBoard[],
+  minUsefulRemnant: number,
+  params: ScoringParams,
+): ScoreBreakdown {
+  const maxBoardLength = allBoards.reduce(
+    (max, b) => Math.max(max, b.length),
+    0,
+  );
+  const usedBoardIds = new Set(patterns.map((p) => p.stockBoard.id));
+
+  const totals = {
+    boardUsePenalty: 0,
+    wasteContribution: 0,
+    leftoverContribution: 0,
+    total: 0,
+  };
+
+  const usedBoards = patterns.map((p) => {
+    const bup = params.boardUsePenalty;
+    let waste = 0;
+    let leftover = 0;
+    if (p.remainderIsUsable) {
+      leftover =
+        -params.leftoverBonus *
+        leftoverValue(p.remainder, maxBoardLength, params.leftoverPower);
+    } else {
+      waste =
+        params.wastePenalty *
+        wasteValue(p.remainder, maxBoardLength, params.wastePower);
+    }
+    totals.boardUsePenalty += bup;
+    totals.wasteContribution += waste;
+    totals.leftoverContribution += leftover;
+    return {
+      boardName: p.stockBoard.name ?? p.stockBoard.id,
+      boardLength: p.stockBoard.length,
+      remainder: p.remainder,
+      remainderIsUsable: p.remainderIsUsable,
+      breakdown: {
+        boardUsePenalty: bup,
+        wasteContribution: waste,
+        leftoverContribution: leftover,
+        total: bup + waste + leftover,
+      },
+    };
+  });
+
+  // Unused boards: no score contribution (stock on the shelf is neutral)
+  const unusedBoards: ScoreBreakdown['unusedBoards'] = [];
+  for (const board of allBoards) {
+    if (usedBoardIds.has(board.id)) continue;
+    unusedBoards.push({
+      boardName: board.name ?? board.id,
+      boardLength: board.length,
+      isUsable: board.length >= minUsefulRemnant,
+      breakdown: {
+        boardUsePenalty: 0,
+        wasteContribution: 0,
+        leftoverContribution: 0,
+        total: 0,
+      },
+    });
+  }
+
+  totals.total =
+    totals.boardUsePenalty +
+    totals.wasteContribution +
+    totals.leftoverContribution;
+
+  return { usedBoards, unusedBoards, totals };
 }

@@ -16,5 +16,11 @@ export type {
 
 export { optimizeCuts } from './ffd';
 export { optimizeCutsBnB } from './bnb';
-export { DEFAULT_SCORING_PARAMS, scoreSolution } from './scoring';
+export { optimizeCutsIlp } from './ilp';
+export {
+  DEFAULT_SCORING_PARAMS,
+  scoreSolution,
+  computeScoreBreakdown,
+} from './scoring';
+export type { ScoreBreakdown, BoardScoreBreakdown } from './scoring';
 export { CutOptimizerWorker } from './workerClient';

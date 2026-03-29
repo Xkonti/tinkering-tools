@@ -14,49 +14,10 @@ import type {
 } from './types';
 import { buildCutPatterns, computeSummary } from './buildOutput';
 import { scoreSolution } from './scoring';
+import { computeSeed, expandDemand, ffdPlace, mulberry32 } from './shared';
 
 // ============================================================
-// Demand expansion
-// ============================================================
-
-function expandDemand(
-  requiredPieces: RequiredPiece[],
-  maxBoardLength: number,
-  typeName: string,
-): { demandItems: DemandItem[]; unfulfilled: UnfulfilledPiece[] } {
-  const demandItems: DemandItem[] = [];
-  const unfulfilled: UnfulfilledPiece[] = [];
-
-  for (const rp of requiredPieces) {
-    if (rp.length > maxBoardLength + 1e-9) {
-      const uf: UnfulfilledPiece = {
-        stockTypeName: typeName,
-        length: rp.length,
-        quantity: rp.quantity,
-        reason: 'No board long enough for this piece',
-      };
-      if (rp.name) uf.name = rp.name;
-      unfulfilled.push(uf);
-      continue;
-    }
-    for (let i = 0; i < rp.quantity; i++) {
-      const item: DemandItem = { length: rp.length };
-      if (rp.name) item.name = rp.name;
-      demandItems.push(item);
-    }
-  }
-
-  // Sort longest first, then by name for symmetry breaking
-  demandItems.sort(
-    (a, b) =>
-      b.length - a.length ||
-      (a.name ?? '').localeCompare(b.name ?? ''),
-  );
-  return { demandItems, unfulfilled };
-}
-
-// ============================================================
-// FFD for warm start
+// FFD warm start (thin wrapper over shared ffdPlace)
 // ============================================================
 
 function ffdWarmStart(
@@ -64,56 +25,47 @@ function ffdWarmStart(
   boards: StockBoard[],
   kerf: number,
 ): OpenBoard[] {
-  const openBoards: OpenBoard[] = [];
-  const unopened = [...boards].sort((a, b) => a.length - b.length);
-
-  for (const item of demandItems) {
-    let bestIdx = -1;
-    let bestRemaining = Infinity;
-
-    for (let i = 0; i < openBoards.length; i++) {
-      const board = openBoards[i]!;
-      const spaceNeeded =
-        item.length + (board.pieces.length > 0 ? kerf : 0);
-      if (spaceNeeded <= board.remainingCapacity + 1e-9) {
-        const remainingAfter = board.remainingCapacity - spaceNeeded;
-        if (remainingAfter < bestRemaining) {
-          bestRemaining = remainingAfter;
-          bestIdx = i;
-        }
-      }
-    }
-
-    if (bestIdx >= 0) {
-      const board = openBoards[bestIdx]!;
-      const betweenKerf = board.pieces.length > 0 ? kerf : 0;
-      board.pieces.push(item);
-      board.usedLength += betweenKerf + item.length;
-      board.remainingCapacity = board.stockBoard.length - board.usedLength;
-      continue;
-    }
-
-    for (let i = 0; i < unopened.length; i++) {
-      const sb = unopened[i]!;
-      if (item.length <= sb.length + 1e-9) {
-        const newBoard: OpenBoard = {
-          stockBoard: sb,
-          pieces: [item],
-          usedLength: item.length,
-          remainingCapacity: sb.length - item.length,
-        };
-        openBoards.push(newBoard);
-        unopened.splice(i, 1);
-        break;
-      }
-    }
-  }
-
-  return openBoards;
+  return ffdPlace(demandItems, boards, kerf).openBoards;
 }
 
 // ============================================================
-// Multi-start FFD warm start
+// Score OpenBoard[] directly (avoids CutPattern allocation)
+// ============================================================
+
+function scoreOpenBoardsDirect(
+  openBoards: OpenBoard[],
+  kerf: number,
+  minUsefulRemnant: number,
+  maxBoardLength: number,
+  boardUsePenalty: number,
+  wastePenalty: number,
+  leftoverBonus: number,
+  powFn: (x: number) => number,
+  wasteVal: (len: number) => number,
+): number {
+  let score = boardUsePenalty * openBoards.length;
+
+  for (let i = 0; i < openBoards.length; i++) {
+    const ob = openBoards[i]!;
+    const n = ob.pieces.length;
+    const pLen = ob.pieces.reduce((s, p) => s + p.length, 0);
+    const betweenKerf = Math.max(0, n - 1) * kerf;
+    const rawRem = ob.stockBoard.length - pLen - betweenKerf;
+    const trailKerf = rawRem >= kerf ? kerf : 0;
+    const remainder = ob.stockBoard.length - pLen - betweenKerf - trailKerf;
+
+    if (remainder >= minUsefulRemnant) {
+      score -= leftoverBonus * powFn(remainder / maxBoardLength);
+    } else {
+      score += wastePenalty * wasteVal(remainder);
+    }
+  }
+
+  return score;
+}
+
+// ============================================================
+// Multi-start FFD warm start (deterministic via seeded PRNG)
 // ============================================================
 
 function multiStartFFD(
@@ -124,30 +76,51 @@ function multiStartFFD(
   params: ScoringParams,
   numStarts: number,
 ): { bestBoards: OpenBoard[]; bestScore: number } {
+  const { boardUsePenalty, wastePenalty, leftoverBonus } = params;
+  const maxBoardLength = boards.reduce(
+    (max, b) => Math.max(max, b.length),
+    0,
+  );
+  const power = params.leftoverPower;
+  const powFn: (x: number) => number =
+    power === 0.5
+      ? Math.sqrt
+      : power === 1.0
+        ? (x: number) => x
+        : power === 1.5
+          ? (x: number) => x * Math.sqrt(x)
+          : power === 2.0
+            ? (x: number) => x * x
+            : (x: number) => Math.pow(x, power);
+
+  const wp = params.wastePower;
+  const wasteVal: (len: number) => number =
+    wp === 1.0
+      ? (len: number) => len
+      : (len: number) =>
+          len * Math.pow(len / maxBoardLength, wp - 1);
+
   // Standard longest-first FFD
   let bestBoards = ffdWarmStart(demandItems, boards, kerf);
-  const bestPatterns = buildCutPatterns(bestBoards, kerf, minUsefulRemnant);
-  let bestScore = scoreSolution(
-    bestPatterns,
-    boards,
-    minUsefulRemnant,
-    params,
+  let bestScore = scoreOpenBoardsDirect(
+    bestBoards, kerf, minUsefulRemnant, maxBoardLength,
+    boardUsePenalty, wastePenalty, leftoverBonus, powFn, wasteVal,
   );
 
-  // Shuffled orderings
+  // Deterministic shuffled orderings
+  const seed = computeSeed(demandItems, boards, kerf);
+  const rng = mulberry32(seed);
+
   for (let s = 0; s < numStarts; s++) {
     const shuffled = [...demandItems];
     for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(rng() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
     }
     const trialBoards = ffdWarmStart(shuffled, boards, kerf);
-    const trialPatterns = buildCutPatterns(trialBoards, kerf, minUsefulRemnant);
-    const trialScore = scoreSolution(
-      trialPatterns,
-      boards,
-      minUsefulRemnant,
-      params,
+    const trialScore = scoreOpenBoardsDirect(
+      trialBoards, kerf, minUsefulRemnant, maxBoardLength,
+      boardUsePenalty, wastePenalty, leftoverBonus, powFn, wasteVal,
     );
     if (trialScore < bestScore - 1e-9) {
       bestScore = trialScore;
@@ -159,7 +132,7 @@ function multiStartFFD(
 }
 
 // ============================================================
-// Local search post-processing
+// Local search post-processing (delta scoring)
 // ============================================================
 
 interface LSBoard {
@@ -188,34 +161,32 @@ function pieceFits(
   return pieceLen + kerfNeeded <= boardCapacity(board, boardLen, kerf) + 1e-9;
 }
 
-function scoreLSBoards(
-  lsBoards: LSBoard[],
-  allBoards: StockBoard[],
+// Score contribution of a single used board (boardUsePenalty + remainder effect)
+function lsBoardScore(
+  board: LSBoard,
+  boardLen: number,
   kerf: number,
   minUsefulRemnant: number,
-  params: ScoringParams,
+  maxBoardLength: number,
+  boardUsePenalty: number,
+  wastePenalty: number,
+  leftoverBonus: number,
+  powFn: (x: number) => number,
+  wasteVal: (len: number) => number,
 ): number {
-  const patterns = lsBoards.map((b) => {
-    const sb = allBoards[b.boardIndex]!;
-    const n = b.pieces.length;
-    const pLen = b.totalPieceLength;
-    const betweenKerf = Math.max(0, n - 1) * kerf;
-    const rawRem = sb.length - pLen - betweenKerf;
-    const trailKerf = rawRem >= kerf ? kerf : 0;
-    const remainder = sb.length - pLen - betweenKerf - trailKerf;
-    return {
-      stockBoard: sb,
-      pieces: b.pieces.map((p) => ({
-        length: p.length,
-        startOffset: 0,
-        ...(p.name ? { name: p.name } : {}),
-      })),
-      totalKerf: betweenKerf + trailKerf,
-      remainder,
-      remainderIsUsable: remainder >= minUsefulRemnant,
-    };
-  });
-  return scoreSolution(patterns, allBoards, minUsefulRemnant, params);
+  const n = board.pieces.length;
+  if (n === 0) return 0;
+  const betweenKerf = (n - 1) * kerf;
+  const rawRem = boardLen - board.totalPieceLength - betweenKerf;
+  const trailKerf = rawRem >= kerf ? kerf : 0;
+  const remainder = boardLen - board.totalPieceLength - betweenKerf - trailKerf;
+  let score = boardUsePenalty;
+  if (remainder >= minUsefulRemnant) {
+    score -= leftoverBonus * powFn(remainder / maxBoardLength);
+  } else {
+    score += wastePenalty * wasteVal(remainder);
+  }
+  return score;
 }
 
 function localSearch(
@@ -226,6 +197,30 @@ function localSearch(
   params: ScoringParams,
   maxPasses: number,
 ): OpenBoard[] {
+  const { boardUsePenalty, wastePenalty, leftoverBonus } = params;
+  const maxBoardLength = allBoards.reduce(
+    (max, b) => Math.max(max, b.length),
+    0,
+  );
+  const power = params.leftoverPower;
+  const powFn: (x: number) => number =
+    power === 0.5
+      ? Math.sqrt
+      : power === 1.0
+        ? (x: number) => x
+        : power === 1.5
+          ? (x: number) => x * Math.sqrt(x)
+          : power === 2.0
+            ? (x: number) => x * x
+            : (x: number) => Math.pow(x, power);
+
+  const wp = params.wastePower;
+  const wasteVal: (len: number) => number =
+    wp === 1.0
+      ? (len: number) => len
+      : (len: number) =>
+          len * Math.pow(len / maxBoardLength, wp - 1);
+
   // Convert to mutable LS boards
   const lsBoards: LSBoard[] = openBoards.map((ob) => {
     const idx = allBoards.findIndex((b) => b.id === ob.stockBoard.id);
@@ -236,13 +231,26 @@ function localSearch(
     };
   });
 
-  let bestScore = scoreLSBoards(
-    lsBoards,
-    allBoards,
-    kerf,
-    minUsefulRemnant,
-    params,
-  );
+  // Helper to score a single LS board
+  const scoreSingle = (b: LSBoard): number =>
+    lsBoardScore(
+      b,
+      allBoards[b.boardIndex]!.length,
+      kerf,
+      minUsefulRemnant,
+      maxBoardLength,
+      boardUsePenalty,
+      wastePenalty,
+      leftoverBonus,
+      powFn,
+      wasteVal,
+    );
+
+  // Compute initial score: only used boards contribute
+  let currentScore = 0;
+  for (const b of lsBoards) {
+    currentScore += scoreSingle(b);
+  }
 
   for (let pass = 0; pass < maxPasses; pass++) {
     let improved = false;
@@ -259,24 +267,30 @@ function localSearch(
           const dstLen = allBoards[dst.boardIndex]!.length;
 
           if (pieceFits(dst, piece.length, dstLen, kerf)) {
-            // Try the move
+            // Compute old contributions
+            const oldSrcScore = scoreSingle(src);
+            const oldDstScore = scoreSingle(dst);
+
+            // Apply the move
             src.pieces.splice(pi, 1);
             src.totalPieceLength -= piece.length;
             dst.pieces.push(piece);
             dst.totalPieceLength += piece.length;
 
-            const newScore = scoreLSBoards(
-              lsBoards.filter((b) => b.pieces.length > 0),
-              allBoards,
-              kerf,
-              minUsefulRemnant,
-              params,
-            );
+            // Compute new contributions
+            const newSrcScore = src.pieces.length > 0 ? scoreSingle(src) : 0;
+            const newDstScore = scoreSingle(dst);
 
-            if (newScore < bestScore - 1e-9) {
-              bestScore = newScore;
+            const newScore =
+              currentScore -
+              oldSrcScore -
+              oldDstScore +
+              newSrcScore +
+              newDstScore;
+
+            if (newScore < currentScore - 1e-9) {
+              currentScore = newScore;
               improved = true;
-              // Keep the move; break to recheck from scratch
               break;
             } else {
               // Undo
@@ -292,7 +306,15 @@ function localSearch(
       if (improved) break;
     }
 
-    if (improved) continue;
+    if (improved) {
+      // Remove empty boards before next pass
+      for (let i = lsBoards.length - 1; i >= 0; i--) {
+        if (lsBoards[i]!.pieces.length === 0) {
+          lsBoards.splice(i, 1);
+        }
+      }
+      continue;
+    }
 
     // Swap: exchange pieces between boards
     for (let aIdx = 0; aIdx < lsBoards.length && !improved; aIdx++) {
@@ -307,6 +329,10 @@ function localSearch(
             const pieceB = boardB.pieces[bi]!;
             if (Math.abs(pieceA.length - pieceB.length) < 1e-9) continue;
 
+            // Compute old contributions
+            const oldAScore = scoreSingle(boardA);
+            const oldBScore = scoreSingle(boardB);
+
             // Temporarily swap
             boardA.pieces[ai] = pieceB;
             boardA.totalPieceLength += pieceB.length - pieceA.length;
@@ -314,21 +340,17 @@ function localSearch(
             boardB.totalPieceLength += pieceA.length - pieceB.length;
 
             // Check feasibility
-            const aFits =
-              boardCapacity(boardA, aLen, kerf) >= -1e-9;
-            const bFits =
-              boardCapacity(boardB, bLen, kerf) >= -1e-9;
+            const aFits = boardCapacity(boardA, aLen, kerf) >= -1e-9;
+            const bFits = boardCapacity(boardB, bLen, kerf) >= -1e-9;
 
             if (aFits && bFits) {
-              const newScore = scoreLSBoards(
-                lsBoards,
-                allBoards,
-                kerf,
-                minUsefulRemnant,
-                params,
-              );
-              if (newScore < bestScore - 1e-9) {
-                bestScore = newScore;
+              const newAScore = scoreSingle(boardA);
+              const newBScore = scoreSingle(boardB);
+              const newScore =
+                currentScore - oldAScore - oldBScore + newAScore + newBScore;
+
+              if (newScore < currentScore - 1e-9) {
+                currentScore = newScore;
                 improved = true;
                 break;
               }
@@ -409,14 +431,12 @@ function arePiecesIdentical(a: DemandItem, b: DemandItem): boolean {
 
 const CANCEL_CHECK_INTERVAL = 4096;
 const MULTI_START_COUNT = 150;
-const STAGNATION_LIMIT = 20_000_000;
 
 // ============================================================
 // Per-type B&B solver — recursive DFS with undo
 // ============================================================
 
 function solveTypeBnB(
-  _typeName: string,
   boards: StockBoard[],
   demandItems: DemandItem[],
   kerf: number,
@@ -424,6 +444,7 @@ function solveTypeBnB(
   params: ScoringParams,
   timeLimitMs: number,
   onProgress: (progress: BnBProgress) => void,
+  onIntermediatePatterns?: (patterns: CutPattern[]) => void,
 ): {
   patterns: CutPattern[];
   unfulfilled: UnfulfilledPiece[];
@@ -460,6 +481,15 @@ function solveTypeBnB(
             ? (x: number) => x * x
             : (x: number) => Math.pow(x, power);
 
+  // Waste value function: wasteLen * pow(wasteLen / maxBoardLength, wastePower - 1)
+  // When wastePower=1, returns wasteLen (backward compatible)
+  const wp = params.wastePower;
+  const wasteVal: (len: number) => number =
+    wp === 1.0
+      ? (len: number) => len
+      : (len: number) =>
+          len * Math.pow(len / maxBoardLength, wp - 1);
+
   // Board lengths in a flat typed array (avoids StockBoard pointer chase)
   const boardLenByIdx = new Float64Array(boards.length);
   for (let i = 0; i < boards.length; i++) {
@@ -474,20 +504,6 @@ function solveTypeBnB(
 
   // Smallest piece length (for frozen board detection)
   const smallestPieceLen = demandItems[demandItems.length - 1]!.length;
-
-  // Per-board unused score contribution (precomputed)
-  const boardUnusedContrib = new Float64Array(boards.length);
-  let baseUnusedScore = 0;
-  for (let i = 0; i < boards.length; i++) {
-    const bLen = boardLenByIdx[i]!;
-    if (bLen >= minUsefulRemnant) {
-      boardUnusedContrib[i] =
-        -leftoverBonus * powFn(bLen / maxBoardLength);
-    } else {
-      boardUnusedContrib[i] = wastePenalty * bLen;
-    }
-    baseUnusedScore += boardUnusedContrib[i]!;
-  }
 
   // Boards sorted by length descending (for lower bound: greedy cover)
   const boardsByLenDesc: number[] = [];
@@ -575,24 +591,27 @@ function solveTypeBnB(
     });
   }
 
+  // --- Emit warm start as first intermediate ---
+  onIntermediatePatterns?.(warmPatterns);
+
   // --- Mutable search state ---
 
   const openBoards: MutableBoard[] = [];
   const usedMask = new Uint8Array(boards.length);
-  let currentUnusedScore = baseUnusedScore;
+  // Unused boards don't contribute to score
   let nodesExplored = 0;
   let nodesPruned = 0;
-  let nodesSinceImprovement = 0;
   let cancelled = false;
   const startTime = performance.now();
   let lastProgressTime = startTime;
+  let lastIntermediateTime = startTime;
   const PROGRESS_INTERVAL_MS = 500;
+  const INTERMEDIATE_INTERVAL_MS = 2000;
 
   // --- Inline leaf scoring (zero allocation) ---
 
   function scoreLeaf(): number {
     let score = boardUsePenalty * openBoards.length;
-    score += currentUnusedScore;
 
     for (let i = 0; i < openBoards.length; i++) {
       const board = openBoards[i]!;
@@ -607,7 +626,7 @@ function solveTypeBnB(
       if (remainder >= minUsefulRemnant) {
         score -= leftoverBonus * powFn(remainder / maxBoardLength);
       } else {
-        score += wastePenalty * remainder;
+        score += wastePenalty * wasteVal(remainder);
       }
     }
 
@@ -618,7 +637,6 @@ function solveTypeBnB(
 
   function lowerBound(pieceIdx: number): number {
     let lb = boardUsePenalty * openBoards.length;
-    lb += currentUnusedScore;
 
     const totalRemaining = remainingSuffix[pieceIdx]!;
     if (totalRemaining === 0) return lb;
@@ -640,7 +658,7 @@ function solveTypeBnB(
         if (remainder >= minUsefulRemnant) {
           lb -= leftoverBonus * powFn(remainder / maxBoardLength);
         } else if (remainder > 0) {
-          lb += wastePenalty * remainder;
+          lb += wastePenalty * wasteVal(remainder);
         }
       } else {
         availableInOpen += availForNext;
@@ -651,7 +669,6 @@ function solveTypeBnB(
     if (unplaced <= 0) return lb;
 
     // Greedy cover with unused boards (pre-sorted largest first)
-    // Better kerf accounting: estimate pieces per new board
     const avgPieceLen =
       remainingCount > 0 ? totalRemaining / remainingCount : totalRemaining;
     let covered = 0;
@@ -660,15 +677,12 @@ function solveTypeBnB(
       const bi = boardsByLenDesc[i]!;
       if (usedMask[bi]) continue;
       const bLen = boardLenByIdx[bi]!;
-      // Estimate how many pieces fit and deduct proportional kerf
       const estPieces = Math.max(
         1,
         Math.floor((bLen + kerf) / (avgPieceLen + kerf)),
       );
       const effectiveCap = bLen - (estPieces - 1) * kerf - kerf;
       covered += Math.max(0, effectiveCap);
-      // This board transitions from unused to used
-      lb -= boardUnusedContrib[bi]!;
       lb += boardUsePenalty;
     }
 
@@ -690,12 +704,11 @@ function solveTypeBnB(
 
   function recurse(pieceIdx: number, prevBoardChoice: number): void {
     nodesExplored++;
-    nodesSinceImprovement++;
 
     if (nodesExplored % CANCEL_CHECK_INTERVAL === 0) {
       const now = performance.now();
       const elapsed = now - startTime;
-      if (elapsed > timeLimitMs || nodesSinceImprovement > STAGNATION_LIMIT) {
+      if (elapsed > timeLimitMs) {
         cancelled = true;
         return;
       }
@@ -717,7 +730,6 @@ function solveTypeBnB(
       if (score < bestScore - 1e-9) {
         bestScore = score;
         bestSolution = captureSolution(openBoards);
-        nodesSinceImprovement = 0;
         const now = performance.now();
         if (now - lastProgressTime >= PROGRESS_INTERVAL_MS) {
           lastProgressTime = now;
@@ -728,6 +740,20 @@ function solveTypeBnB(
             boardsUsedInBest: bestSolution.length,
             improved: true,
           });
+          // Emit intermediate patterns (throttled separately)
+          if (onIntermediatePatterns && now - lastIntermediateTime >= INTERMEDIATE_INTERVAL_MS) {
+            lastIntermediateTime = now;
+            const intBoards: OpenBoard[] = bestSolution.map((s) => ({
+              stockBoard: boards[s.boardIndex]!,
+              pieces: s.pieces.slice(0, s.pieceCount),
+              usedLength: s.totalPieceLength + Math.max(0, s.pieceCount - 1) * kerf,
+              remainingCapacity:
+                boardLenByIdx[s.boardIndex]! -
+                s.totalPieceLength -
+                Math.max(0, s.pieceCount - 1) * kerf,
+            }));
+            onIntermediatePatterns(buildCutPatterns(intBoards, kerf, minUsefulRemnant));
+          }
         }
       }
       return;
@@ -860,14 +886,12 @@ function solveTypeBnB(
       newBoard.pieces[0] = piece;
       openBoards.push(newBoard);
       usedMask[boardIdx] = 1;
-      currentUnusedScore -= boardUnusedContrib[boardIdx]!;
 
       recurse(pieceIdx + 1, newOpenIdx);
 
       // Undo
       openBoards.pop();
       usedMask[boardIdx] = 0;
-      currentUnusedScore += boardUnusedContrib[boardIdx]!;
       if (cancelled) return;
     }
   }
@@ -970,7 +994,6 @@ export function optimizeCutsBnB(
         : timeLimitMs;
 
     const result = solveTypeBnB(
-      typeName,
       boards,
       demandItems,
       kerf,
@@ -978,6 +1001,24 @@ export function optimizeCutsBnB(
       scoringParams,
       typeTimeBudget,
       onProgress,
+      (intermediatePatterns) => {
+        // Build a full intermediate result combining completed types + current type's progress
+        const combined = { ...patternsByType };
+        combined[typeName] = intermediatePatterns;
+        const intermediateResult: CutOptimizerResult = {
+          patternsByType: combined,
+          unfulfilled: [...allUnfulfilled],
+          summary: computeSummary(combined, input.stockTypes, minUsefulRemnant),
+        };
+        onProgress({
+          elapsedMs: performance.now() - startTime,
+          nodesExplored: 0,
+          bestScore: 0,
+          boardsUsedInBest: intermediatePatterns.length,
+          improved: true,
+          intermediateResult,
+        });
+      },
     );
 
     if (result.patterns.length > 0) {

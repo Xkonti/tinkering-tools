@@ -37,6 +37,7 @@ export interface BoardCutOptimizerState {
   algorithm: AlgorithmChoice;
   scoringParams: ScoringParams;
   bnbTimeLimitMs: number;
+  bnbExhaustive: boolean;
   // Display settings (per-project)
   unitSystem: 'imperial' | 'metric';
   metricUnitSymbol: DisplaySettings['metricUnitSymbol'];
@@ -174,6 +175,7 @@ function migrateLegacyData(): BoardCutOptimizerState | undefined {
     algorithm: 'branchAndBound' as const,
     scoringParams: { ...DEFAULT_SCORING_PARAMS },
     bnbTimeLimitMs: 180_000,
+    bnbExhaustive: false,
     ...ds,
   };
 }
@@ -205,6 +207,7 @@ function createDefaults(): BoardCutOptimizerState {
     algorithm: 'branchAndBound',
     scoringParams: { ...DEFAULT_SCORING_PARAMS },
     bnbTimeLimitMs: 180_000,
+    bnbExhaustive: false,
     unitSystem: 'imperial',
     metricUnitSymbol: 'cm',
     metricResolutionMm: 1,
@@ -235,12 +238,24 @@ export const useBoardCutOptimizerStore = defineStore(
       currentVersion: 2,
       importers: {
         1: (raw: unknown) => ({
-          ...(raw as Omit<BoardCutOptimizerState, 'algorithm' | 'scoringParams' | 'bnbTimeLimitMs'>),
+          ...(raw as Omit<BoardCutOptimizerState, 'algorithm' | 'scoringParams' | 'bnbTimeLimitMs' | 'bnbExhaustive'>),
           algorithm: 'branchAndBound' as const,
           scoringParams: { ...DEFAULT_SCORING_PARAMS },
           bnbTimeLimitMs: 180_000,
-        }),
-        2: (raw: unknown) => raw as BoardCutOptimizerState,
+          bnbExhaustive: false,
+        }) as BoardCutOptimizerState,
+        2: (raw: unknown) => {
+          const s = raw as Record<string, unknown>;
+          if (!('bnbExhaustive' in s)) {
+            s.bnbExhaustive = false;
+          }
+          // Add wastePower to existing scoringParams
+          const sp = s.scoringParams as Record<string, unknown> | undefined;
+          if (sp && !('wastePower' in sp)) {
+            sp.wastePower = 1;
+          }
+          return s as unknown as BoardCutOptimizerState;
+        },
       },
       defaults: createDefaults,
       migrate: migrateLegacyData,
@@ -254,6 +269,7 @@ export const useBoardCutOptimizerStore = defineStore(
         algorithm: state.value.algorithm,
         scoringParams: { ...state.value.scoringParams },
         bnbTimeLimitMs: state.value.bnbTimeLimitMs,
+        bnbExhaustive: state.value.bnbExhaustive,
         unitSystem: state.value.unitSystem,
         metricUnitSymbol: state.value.metricUnitSymbol,
         metricResolutionMm: state.value.metricResolutionMm,

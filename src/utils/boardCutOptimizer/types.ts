@@ -67,11 +67,12 @@ export interface CutOptimizerResult {
 
 // --- Algorithm selection ---
 
-export type AlgorithmChoice = 'ffd' | 'branchAndBound';
+export type AlgorithmChoice = 'ffd' | 'branchAndBound' | 'ilp';
 
 export interface ScoringParams {
   boardUsePenalty: number;
   wastePenalty: number;
+  wastePower: number;
   leftoverBonus: number;
   leftoverPower: number;
 }
@@ -87,6 +88,7 @@ export interface BnBProgress {
   bestScore: number;
   boardsUsedInBest: number;
   improved: boolean;
+  intermediateResult?: CutOptimizerResult;
 }
 
 export interface BnBStats {

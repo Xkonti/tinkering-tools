@@ -2,8 +2,6 @@ import type {
   CutOptimizerInput,
   CutOptimizerResult,
   CutPattern,
-  DemandItem,
-  OpenBoard,
   RequiredPiece,
   StockBoard,
   UnfulfilledPiece,
@@ -13,122 +11,7 @@ import {
   buildCutPatterns,
   computeSummary,
 } from './buildOutput';
-
-// ============================================================
-// Phase 1: Expand demand & validate
-// ============================================================
-
-function expandDemand(
-  requiredPieces: RequiredPiece[],
-  maxBoardLength: number,
-  typeName: string,
-): { demandItems: DemandItem[]; unfulfilled: UnfulfilledPiece[] } {
-  const demandItems: DemandItem[] = [];
-  const unfulfilled: UnfulfilledPiece[] = [];
-
-  for (const rp of requiredPieces) {
-    if (rp.length > maxBoardLength + 1e-9) {
-      const uf: UnfulfilledPiece = {
-        stockTypeName: typeName,
-        length: rp.length,
-        quantity: rp.quantity,
-        reason: 'No board long enough for this piece',
-      };
-      if (rp.name) uf.name = rp.name;
-      unfulfilled.push(uf);
-      continue;
-    }
-    for (let i = 0; i < rp.quantity; i++) {
-      const item: DemandItem = { length: rp.length };
-      if (rp.name) item.name = rp.name;
-      demandItems.push(item);
-    }
-  }
-
-  // FFD: sort longest first
-  demandItems.sort(
-    (a, b) =>
-      b.length - a.length ||
-      (a.name ?? '').localeCompare(b.name ?? ''),
-  );
-  return { demandItems, unfulfilled };
-}
-
-// ============================================================
-// Phase 2: First Fit Decreasing placement
-// ============================================================
-
-function placeOnBoard(
-  board: OpenBoard,
-  item: DemandItem,
-  kerf: number,
-): void {
-  // Between-piece kerf (cut to separate from previous piece)
-  const betweenKerf = board.pieces.length > 0 ? kerf : 0;
-  board.pieces.push(item);
-  board.usedLength += betweenKerf + item.length;
-  board.remainingCapacity = board.stockBoard.length - board.usedLength;
-}
-
-function ffdPlace(
-  demandItems: DemandItem[],
-  boards: StockBoard[],
-  kerf: number,
-): { openBoards: OpenBoard[]; unfulfilled: DemandItem[] } {
-  const openBoards: OpenBoard[] = [];
-  // Sort available boards ascending by length (shortest first)
-  const unopened = [...boards].sort((a, b) => a.length - b.length);
-  const unfulfilled: DemandItem[] = [];
-
-  for (const item of demandItems) {
-    // 1. Try open boards — best fit (least remaining after placement)
-    let bestIdx = -1;
-    let bestRemaining = Infinity;
-
-    for (let i = 0; i < openBoards.length; i++) {
-      const board = openBoards[i]!;
-      const spaceNeeded =
-        item.length + (board.pieces.length > 0 ? kerf : 0);
-      if (spaceNeeded <= board.remainingCapacity + 1e-9) {
-        const remainingAfter = board.remainingCapacity - spaceNeeded;
-        if (remainingAfter < bestRemaining) {
-          bestRemaining = remainingAfter;
-          bestIdx = i;
-        }
-      }
-    }
-
-    if (bestIdx >= 0) {
-      placeOnBoard(openBoards[bestIdx]!, item, kerf);
-      continue;
-    }
-
-    // 2. Open the shortest unopened board that fits
-    let opened = false;
-    for (let i = 0; i < unopened.length; i++) {
-      const sb = unopened[i]!;
-      if (item.length <= sb.length + 1e-9) {
-        const newBoard: OpenBoard = {
-          stockBoard: sb,
-          pieces: [],
-          usedLength: 0,
-          remainingCapacity: sb.length,
-        };
-        placeOnBoard(newBoard, item, kerf);
-        openBoards.push(newBoard);
-        unopened.splice(i, 1);
-        opened = true;
-        break;
-      }
-    }
-
-    if (!opened) {
-      unfulfilled.push(item);
-    }
-  }
-
-  return { openBoards, unfulfilled };
-}
+import { expandDemand, ffdPlace } from './shared';
 
 // ============================================================
 // Per-type solver

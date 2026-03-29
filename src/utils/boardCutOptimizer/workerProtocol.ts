@@ -4,6 +4,7 @@ import type {
   BnBStats,
   CutOptimizerInput,
   CutOptimizerResult,
+  ScoringParams,
 } from './types';
 
 // --- Messages from main thread to worker ---
@@ -15,6 +16,12 @@ export type WorkerRequest =
       id: string;
       input: CutOptimizerInput;
       options: BnBOptions;
+    }
+  | {
+      type: 'run-ilp';
+      id: string;
+      input: CutOptimizerInput;
+      scoringParams: ScoringParams;
     }
   | { type: 'cancel'; id: string };
 

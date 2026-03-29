@@ -5,6 +5,7 @@ import type {
   BnBStats,
   CutOptimizerInput,
   CutOptimizerResult,
+  ScoringParams,
 } from './types';
 
 export interface WorkerResult {
@@ -54,6 +55,17 @@ export class CutOptimizerWorker {
       { type: 'run-bnb', id, input, options },
       onProgress,
     );
+  }
+
+  runIlp(
+    input: CutOptimizerInput,
+    scoringParams: ScoringParams,
+  ): Promise<CutOptimizerResult> {
+    const id = this.nextId();
+    return this.send(
+      { type: 'run-ilp', id, input, scoringParams },
+      undefined,
+    ).then((r) => r.result);
   }
 
   cancel(): void {

@@ -129,12 +129,28 @@
               toggle-color="primary"
               :options="[
                 { label: 'FFD (Fast)', value: 'ffd' },
-                { label: 'Branch & Bound (Optimal)', value: 'branchAndBound' },
+                { label: 'B&B (Exhaustive)', value: 'branchAndBound' },
+                { label: 'ILP (Optimal)', value: 'ilp' },
               ]"
             />
           </div>
           <template v-if="state.algorithm === 'branchAndBound'">
-            <div class="col-6 col-sm-3 col-md-2">
+            <div class="col-auto">
+              <q-checkbox
+                v-model="state.bnbExhaustive"
+                label="Exhaustive"
+                dense
+              >
+                <q-tooltip max-width="300px">
+                  When checked, the algorithm searches until it has
+                  explored the entire solution space and found the
+                  provably optimal result. This may take a very long
+                  time for large problems. Use Cancel to stop early
+                  and keep the best result found so far.
+                </q-tooltip>
+              </q-checkbox>
+            </div>
+            <div v-if="!state.bnbExhaustive" class="col-6 col-sm-3 col-md-2">
               <q-input
                 v-model.number="state.bnbTimeLimitMs"
                 type="number"
@@ -156,6 +172,8 @@
                 </template>
               </q-input>
             </div>
+          </template>
+          <template v-if="state.algorithm !== 'ffd'">
             <div class="col-6 col-sm-3 col-md-2">
               <q-input
                 v-model.number="state.scoringParams.boardUsePenalty"
@@ -189,10 +207,35 @@
                 <template #append>
                   <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
                     <q-tooltip max-width="300px">
-                      Cost per unit length of wasted material (remainders
+                      Cost multiplier for wasted material (remainders
                       too short to be useful, plus any unused stock boards
                       shorter than the minimum useful remnant). Higher values
                       make the optimizer try harder to eliminate small scraps.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.wastePower"
+                type="number"
+                outlined
+                dense
+                label="Waste curve"
+                step="0.1"
+                min="0.1"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Exponent controlling how much larger waste pieces
+                      are penalized vs smaller ones. At 1.0 the penalty
+                      is linear (proportional to length). Above 1.0,
+                      large waste pieces are penalized disproportionately
+                      more (e.g. at 1.5, one 20" waste costs more than
+                      two 10" wastes). This encourages the optimizer to
+                      spread waste across small pieces.
                     </q-tooltip>
                   </q-icon>
                 </template>
@@ -467,7 +510,7 @@
           </div>
         </div>
         <q-linear-progress
-          v-if="isRunning && state.algorithm === 'branchAndBound'"
+          v-if="isRunning && state.algorithm !== 'ffd'"
           indeterminate
           color="primary"
           class="q-mb-sm"
@@ -478,6 +521,9 @@
             &nbsp;|&nbsp; {{ progress.nodesExplored.toLocaleString() }} nodes
             &nbsp;|&nbsp; Best: {{ progress.boardsUsedInBest }} boards used
           </template>
+        </div>
+        <div v-if="isRunning && state.algorithm === 'ilp'" class="text-caption text-grey-7 q-mb-sm">
+          {{ (elapsedMs / 1000).toFixed(1) }}s elapsed — solving ILP
         </div>
       </div>
 
@@ -542,6 +588,69 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Score Breakdown -->
+        <div v-if="scoreBreakdown" class="col-12">
+          <q-separator />
+          <div class="text-h6 q-my-md">Score Breakdown</div>
+          <div class="row q-col-gutter-md q-mb-md">
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">Total Score</div>
+              <div class="text-h5">{{ scoreBreakdown.totals.total.toFixed(1) }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">Board Use Penalty</div>
+              <div class="text-h5 text-negative">+{{ scoreBreakdown.totals.boardUsePenalty.toFixed(1) }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">Waste Penalty</div>
+              <div class="text-h5 text-negative">+{{ scoreBreakdown.totals.wasteContribution.toFixed(1) }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">Leftover Bonus</div>
+              <div class="text-h5 text-positive">{{ scoreBreakdown.totals.leftoverContribution.toFixed(1) }}</div>
+            </div>
+          </div>
+          <q-expansion-item label="Per-board details" dense header-class="text-caption text-grey-7">
+            <div class="q-pa-sm">
+              <table class="text-caption" style="border-collapse: collapse; width: 100%;">
+                <thead>
+                  <tr class="text-grey-7">
+                    <th style="text-align: left; padding: 2px 8px;">Board</th>
+                    <th style="text-align: right; padding: 2px 8px;">Remainder</th>
+                    <th style="text-align: right; padding: 2px 8px;">Board Use</th>
+                    <th style="text-align: right; padding: 2px 8px;">Waste</th>
+                    <th style="text-align: right; padding: 2px 8px;">Leftover</th>
+                    <th style="text-align: right; padding: 2px 8px;">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(b, i) in scoreBreakdown.usedBoards" :key="'u' + i">
+                    <td style="padding: 2px 8px;">{{ b.boardName }} ({{ fmtDist(b.boardLength) }})</td>
+                    <td style="text-align: right; padding: 2px 8px;">
+                      {{ fmtDist(b.remainder) }}
+                      <span :class="b.remainderIsUsable ? 'text-positive' : 'text-negative'">
+                        ({{ b.remainderIsUsable ? 'usable' : 'waste' }})
+                      </span>
+                    </td>
+                    <td style="text-align: right; padding: 2px 8px;" class="text-negative">+{{ b.breakdown.boardUsePenalty.toFixed(1) }}</td>
+                    <td style="text-align: right; padding: 2px 8px;" class="text-negative">{{ b.breakdown.wasteContribution > 0 ? '+' + b.breakdown.wasteContribution.toFixed(1) : '' }}</td>
+                    <td style="text-align: right; padding: 2px 8px;" class="text-positive">{{ b.breakdown.leftoverContribution < 0 ? b.breakdown.leftoverContribution.toFixed(1) : '' }}</td>
+                    <td style="text-align: right; padding: 2px 8px; font-weight: 500;">{{ b.breakdown.total.toFixed(1) }}</td>
+                  </tr>
+                  <tr v-for="(b, i) in scoreBreakdown.unusedBoards" :key="'x' + i" class="text-grey-6">
+                    <td style="padding: 2px 8px;">{{ b.boardName }} ({{ fmtDist(b.boardLength) }}) — unused</td>
+                    <td style="text-align: right; padding: 2px 8px;">{{ fmtDist(b.boardLength) }} ({{ b.isUsable ? 'preserved' : 'waste' }})</td>
+                    <td style="text-align: right; padding: 2px 8px;"></td>
+                    <td style="text-align: right; padding: 2px 8px;">{{ b.breakdown.wasteContribution > 0 ? '+' + b.breakdown.wasteContribution.toFixed(1) : '' }}</td>
+                    <td style="text-align: right; padding: 2px 8px;">{{ b.breakdown.leftoverContribution < 0 ? b.breakdown.leftoverContribution.toFixed(1) : '' }}</td>
+                    <td style="text-align: right; padding: 2px 8px; font-weight: 500;">{{ b.breakdown.total.toFixed(1) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </q-expansion-item>
         </div>
 
         <!-- Cut Patterns by Type -->
@@ -755,7 +864,10 @@ import { computed, onUnmounted, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
-import { CutOptimizerWorker } from 'src/utils/boardCutOptimizer';
+import {
+  CutOptimizerWorker,
+  computeScoreBreakdown,
+} from 'src/utils/boardCutOptimizer';
 import type {
   BnBProgress,
   BnBStats,
@@ -763,6 +875,7 @@ import type {
   CutOptimizerResult,
   CutPattern,
   PlacedPiece,
+  ScoreBreakdown,
   StockBoard,
 } from 'src/utils/boardCutOptimizer';
 import { useBoardCutOptimizerStore } from 'src/stores/boardCutOptimizer';
@@ -982,15 +1095,26 @@ async function calculate() {
   try {
     if (state.value.algorithm === 'ffd') {
       result.value = await workerClient.runFfd(inp);
+    } else if (state.value.algorithm === 'ilp') {
+      result.value = await workerClient.runIlp(
+        inp,
+        { ...state.value.scoringParams },
+      );
     } else {
+      const timeLimitMs = state.value.bnbExhaustive
+        ? Number.MAX_SAFE_INTEGER
+        : state.value.bnbTimeLimitMs;
       const { result: r, stats } = await workerClient.runBnB(
         inp,
         {
           scoringParams: { ...state.value.scoringParams },
-          timeLimitMs: state.value.bnbTimeLimitMs,
+          timeLimitMs,
         },
         (p) => {
           progress.value = { ...p };
+          if (p.intermediateResult) {
+            result.value = p.intermediateResult;
+          }
         },
       );
       result.value = r;
@@ -1020,6 +1144,18 @@ const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
   if (!result.value) return [];
   return Object.entries(result.value.patternsByType).sort((a, b) =>
     a[0].localeCompare(b[0]),
+  );
+});
+
+const scoreBreakdown = computed<ScoreBreakdown | null>(() => {
+  if (!result.value || state.value.algorithm === 'ffd') return null;
+  const allBoards = buildInput()?.stockTypes.flatMap((st) => st.boards) ?? [];
+  const patterns = Object.values(result.value.patternsByType).flat();
+  return computeScoreBreakdown(
+    patterns,
+    allBoards,
+    state.value.minUsefulRemnant,
+    state.value.scoringParams,
   );
 });
 

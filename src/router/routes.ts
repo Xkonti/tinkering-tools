@@ -19,6 +19,18 @@ const routes: RouteRecordRaw[] = [
     ],
   },
 
+  {
+    path: '/woodworking/board-cut-optimizer/print',
+    component: () => import('layouts/PrintLayout.vue'),
+    children: [
+      {
+        path: '',
+        component: () => import('pages/BoardCutOptimizerPrintPage.vue'),
+        meta: { toolName: 'Board Cut Optimizer — Print' },
+      },
+    ],
+  },
+
   // Always leave this as last one,
   // but you can also remove it
   {

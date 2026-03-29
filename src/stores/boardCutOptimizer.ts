@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useToolProjects } from 'src/composables/useToolProjects';
 import type { DisplaySettings, RoundingStrategy } from 'src/utils/units';
-import type { AlgorithmChoice, ScoringParams } from 'src/utils/boardCutOptimizer';
+import type { AlgorithmChoice, CutOptimizerResult, ScoringParams } from 'src/utils/boardCutOptimizer';
 import { DEFAULT_SCORING_PARAMS } from 'src/utils/boardCutOptimizer';
 
 export interface StockTypeInput {
@@ -273,6 +273,9 @@ export const useBoardCutOptimizerStore = defineStore(
       roundingStrategy: state.value.roundingStrategy,
     }));
 
+    // Last calculation result (shared with print page, not persisted)
+    const lastResult = ref<CutOptimizerResult | null>(null);
+
     const stockTypeNames = computed(() =>
       state.value.stockTypes.map((s) => s.name).filter((n) => n.length > 0),
     );
@@ -323,6 +326,7 @@ export const useBoardCutOptimizerStore = defineStore(
       projects,
       activeProject,
       displaySettings,
+      lastResult,
       switchProject,
       createProject,
       duplicateProject,

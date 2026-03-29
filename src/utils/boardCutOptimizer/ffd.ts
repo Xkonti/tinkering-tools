@@ -46,7 +46,11 @@ function expandDemand(
   }
 
   // FFD: sort longest first
-  demandItems.sort((a, b) => b.length - a.length);
+  demandItems.sort(
+    (a, b) =>
+      b.length - a.length ||
+      (a.name ?? '').localeCompare(b.name ?? ''),
+  );
   return { demandItems, unfulfilled };
 }
 

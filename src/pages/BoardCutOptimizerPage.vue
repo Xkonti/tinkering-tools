@@ -451,6 +451,15 @@
               @click="cancelCalculation"
             />
           </div>
+          <div v-if="result && !isRunning" class="col-auto">
+            <q-btn
+              flat
+              no-caps
+              label="Print Results"
+              icon="print"
+              @click="openPrintView"
+            />
+          </div>
           <div v-if="lastStats" class="col text-caption text-grey-7">
             {{ lastStats.totalNodesExplored.toLocaleString() }} nodes explored
             in {{ (lastStats.totalElapsedMs / 1000).toFixed(1) }}s
@@ -618,6 +627,22 @@
                 />
               </template>
 
+              <!-- Trailing kerf gap (between last piece and remainder) -->
+              <div
+                v-if="
+                  pattern.pieces.length > 0 &&
+                  pattern.totalKerf >
+                    Math.max(0, pattern.pieces.length - 1) * state.kerf +
+                      1e-9
+                "
+                :style="{
+                  flexBasis:
+                    toPercent(state.kerf, pattern.stockBoard.length) + '%',
+                  backgroundColor: '#212121',
+                  minWidth: '1px',
+                }"
+              />
+
               <!-- Remainder -->
               <div
                 v-if="pattern.remainder > 0"
@@ -628,8 +653,8 @@
                       pattern.stockBoard.length,
                     ) + '%',
                   backgroundColor: pattern.remainderIsUsable
-                    ? '#FFC107'
-                    : '#BDBDBD',
+                    ? '#FF9800'
+                    : '#EF5350',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -728,6 +753,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref } from 'vue';
 import { useQuasar } from 'quasar';
+import { useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { CutOptimizerWorker } from 'src/utils/boardCutOptimizer';
 import type {
@@ -747,6 +773,7 @@ import DistanceInput from 'src/components/DistanceInput.vue';
 import ToolProjectBar from 'src/components/ToolProjectBar.vue';
 
 const $q = useQuasar();
+const router = useRouter();
 const store = useBoardCutOptimizerStore();
 const {
   state,
@@ -983,6 +1010,12 @@ function cancelCalculation() {
   workerClient.cancel();
 }
 
+function openPrintView() {
+  if (!result.value) return;
+  store.lastResult = result.value;
+  void router.push('/woodworking/board-cut-optimizer/print');
+}
+
 const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
   if (!result.value) return [];
   return Object.entries(result.value.patternsByType).sort((a, b) =>
@@ -993,14 +1026,14 @@ const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
 // --- Visualization helpers ---
 
 const PIECE_COLORS = [
-  '#4CAF50',
-  '#2196F3',
-  '#FF9800',
-  '#9C27B0',
-  '#00BCD4',
-  '#E91E63',
-  '#8BC34A',
-  '#FF5722',
+  '#7E9E82',
+  '#7A9BB5',
+  '#B0937A',
+  '#9683A4',
+  '#7AAAA4',
+  '#A4818D',
+  '#8EA47E',
+  '#9B8A7A',
 ];
 
 function pieceColor(length: number): string {

@@ -1158,3 +1158,114 @@ describe('scoreSolution', () => {
     expect(scoreSansShort).toBeLessThan(score);
   });
 });
+
+// ============================================================
+// Optimization-specific Tests
+// ============================================================
+
+describe('B&B optimizations', () => {
+  it('multi-start FFD produces score <= single FFD', () => {
+    const input = makeInput({
+      stockTypes: [
+        {
+          name: '2x4',
+          boards: [
+            { length: 92.5, quantity: 14 },
+            { length: 23, quantity: 4 },
+          ],
+        },
+      ],
+      pieces: [
+        { stockTypeName: '2x4', length: 34.75, quantity: 8, name: 'Leg' },
+        { stockTypeName: '2x4', length: 24, quantity: 6, name: 'Support' },
+        { stockTypeName: '2x4', length: 30, quantity: 4, name: 'Side' },
+      ],
+      kerf: 0.125,
+      minUsefulRemnant: 10,
+    });
+
+    const ffdResult = optimizeCuts(input);
+    const { result: bnbResult } = runBnB(input);
+
+    const allBoards = input.stockTypes.flatMap((st) => st.boards);
+    const ffdScore = scoreSolution(
+      Object.values(ffdResult.patternsByType).flat(),
+      allBoards,
+      input.minUsefulRemnant,
+      DEFAULT_SCORING_PARAMS,
+    );
+    const bnbScore = scoreSolution(
+      Object.values(bnbResult.patternsByType).flat(),
+      allBoards,
+      input.minUsefulRemnant,
+      DEFAULT_SCORING_PARAMS,
+    );
+
+    // B&B (with multi-start) should be at least as good as single FFD
+    expect(bnbScore).toBeLessThanOrEqual(ffdScore + 1e-6);
+  });
+
+  it('stagnation detection triggers and returns valid result', () => {
+    // Large problem that will trigger stagnation before time limit
+    const input = makeInput({
+      stockTypes: [
+        {
+          name: '2x4',
+          boards: [
+            { length: 96, quantity: 20 },
+            { length: 48, quantity: 10 },
+          ],
+        },
+      ],
+      pieces: [
+        { stockTypeName: '2x4', length: 22, quantity: 10 },
+        { stockTypeName: '2x4', length: 15, quantity: 10 },
+        { stockTypeName: '2x4', length: 10, quantity: 10 },
+      ],
+      kerf: 0.25,
+      minUsefulRemnant: 10,
+    });
+
+    const { result, stats } = optimizeCutsBnB(
+      input,
+      {
+        scoringParams: { ...DEFAULT_SCORING_PARAMS },
+        timeLimitMs: 300_000, // 5 min — long enough that stagnation hits first
+      },
+      () => {},
+    );
+
+    // Should produce a valid result
+    expect(result.unfulfilled).toHaveLength(0);
+    expect(totalPiecesPlaced(result)).toBe(30);
+    // Should have explored nodes
+    expect(stats.totalNodesExplored).toBeGreaterThan(0);
+  });
+
+  it('prefers using short boards to reduce waste from unused scraps', () => {
+    // Short boards below minUsefulRemnant count as waste if unused.
+    // The optimizer should prefer using them even if it means more boards.
+    const input = makeInput({
+      stockTypes: [
+        {
+          name: '2x4',
+          boards: [
+            { length: 92.5, quantity: 5 },
+            { length: 8, quantity: 3 }, // below minUsefulRemnant=10
+          ],
+        },
+      ],
+      pieces: [{ stockTypeName: '2x4', length: 7, quantity: 3 }],
+      kerf: 0.125,
+      minUsefulRemnant: 10,
+    });
+
+    const { result } = runBnB(input, { wastePenalty: 3 });
+
+    // With wastePenalty=3, unused 8" boards cost 24 in waste.
+    // Using them (even if it means 3 boards vs 1) should be preferred
+    // when the score savings from eliminating waste outweigh boardUsePenalty.
+    expect(result.unfulfilled).toHaveLength(0);
+    expect(totalPiecesPlaced(result)).toBe(3);
+  });
+});

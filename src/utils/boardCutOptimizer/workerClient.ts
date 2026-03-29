@@ -1,22 +1,13 @@
 import type { WorkerRequest, WorkerResponse } from './workerProtocol';
 import type {
-  BnBOptions,
-  BnBProgress,
-  BnBStats,
   CutOptimizerInput,
   CutOptimizerResult,
   ScoringParams,
 } from './types';
 
-export interface WorkerResult {
-  result: CutOptimizerResult;
-  stats: BnBStats | undefined;
-}
-
 interface PendingJob {
-  resolve: (value: WorkerResult) => void;
+  resolve: (value: CutOptimizerResult) => void;
   reject: (reason: Error) => void;
-  onProgress: ((progress: BnBProgress) => void) | undefined;
 }
 
 export class CutOptimizerWorker {
@@ -37,39 +28,19 @@ export class CutOptimizerWorker {
     return w;
   }
 
-  runFfd(input: CutOptimizerInput): Promise<CutOptimizerResult> {
-    const id = this.nextId();
-    return this.send(
-      { type: 'run-ffd', id, input },
-      undefined,
-    ).then((r) => r.result);
-  }
-
-  runBnB(
-    input: CutOptimizerInput,
-    options: BnBOptions,
-    onProgress: ((progress: BnBProgress) => void) | undefined,
-  ): Promise<WorkerResult> {
-    const id = this.nextId();
-    return this.send(
-      { type: 'run-bnb', id, input, options },
-      onProgress,
-    );
-  }
-
-  runIlp(
+  run(
     input: CutOptimizerInput,
     scoringParams: ScoringParams,
   ): Promise<CutOptimizerResult> {
     const id = this.nextId();
-    return this.send(
-      { type: 'run-ilp', id, input, scoringParams },
-      undefined,
-    ).then((r) => r.result);
+    const msg: WorkerRequest = { type: 'run-ilp', id, input, scoringParams };
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject });
+      this.worker.postMessage(msg);
+    });
   }
 
   cancel(): void {
-    // Worker is blocked in synchronous B&B — terminate and recreate
     this.worker.terminate();
     for (const { reject } of this.pending.values()) {
       reject(new Error('Cancelled'));
@@ -90,17 +61,6 @@ export class CutOptimizerWorker {
     return String(++this.idCounter);
   }
 
-  private send(
-    msg: WorkerRequest,
-    onProgress: ((progress: BnBProgress) => void) | undefined,
-  ): Promise<WorkerResult> {
-    return new Promise((resolve, reject) => {
-      if (msg.type === 'cancel') return;
-      this.pending.set(msg.id, { resolve, reject, onProgress });
-      this.worker.postMessage(msg);
-    });
-  }
-
   private handleMessage(event: MessageEvent<WorkerResponse>): void {
     const msg = event.data;
     const entry = this.pending.get(msg.id);
@@ -109,10 +69,7 @@ export class CutOptimizerWorker {
     switch (msg.type) {
       case 'result':
         this.pending.delete(msg.id);
-        entry.resolve({ result: msg.result, stats: msg.stats });
-        break;
-      case 'progress':
-        entry.onProgress?.(msg.progress);
+        entry.resolve(msg.result);
         break;
       case 'error':
         this.pending.delete(msg.id);

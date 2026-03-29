@@ -1,7 +1,4 @@
 import type {
-  BnBOptions,
-  BnBProgress,
-  BnBStats,
   CutOptimizerInput,
   CutOptimizerResult,
   ScoringParams,
@@ -10,13 +7,6 @@ import type {
 // --- Messages from main thread to worker ---
 
 export type WorkerRequest =
-  | { type: 'run-ffd'; id: string; input: CutOptimizerInput }
-  | {
-      type: 'run-bnb';
-      id: string;
-      input: CutOptimizerInput;
-      options: BnBOptions;
-    }
   | {
       type: 'run-ilp';
       id: string;
@@ -32,8 +22,6 @@ export type WorkerResponse =
       type: 'result';
       id: string;
       result: CutOptimizerResult;
-      stats?: BnBStats;
     }
-  | { type: 'progress'; id: string; progress: BnBProgress }
   | { type: 'error'; id: string; error: string }
   | { type: 'cancelled'; id: string };

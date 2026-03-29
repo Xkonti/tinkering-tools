@@ -119,61 +119,8 @@
       <!-- Algorithm Settings -->
       <div class="col-12">
         <q-separator />
-        <div class="text-h6 q-my-md">Algorithm</div>
+        <div class="text-h6 q-my-md">Scoring</div>
         <div class="row q-col-gutter-md items-center">
-          <div class="col-12 col-sm-auto">
-            <q-btn-toggle
-              v-model="state.algorithm"
-              no-caps
-              rounded
-              toggle-color="primary"
-              :options="[
-                { label: 'FFD (Fast)', value: 'ffd' },
-                { label: 'B&B (Exhaustive)', value: 'branchAndBound' },
-                { label: 'ILP (Optimal)', value: 'ilp' },
-              ]"
-            />
-          </div>
-          <template v-if="state.algorithm === 'branchAndBound'">
-            <div class="col-auto">
-              <q-checkbox
-                v-model="state.bnbExhaustive"
-                label="Exhaustive"
-                dense
-              >
-                <q-tooltip max-width="300px">
-                  When checked, the algorithm searches until it has
-                  explored the entire solution space and found the
-                  provably optimal result. This may take a very long
-                  time for large problems. Use Cancel to stop early
-                  and keep the best result found so far.
-                </q-tooltip>
-              </q-checkbox>
-            </div>
-            <div v-if="!state.bnbExhaustive" class="col-6 col-sm-3 col-md-2">
-              <q-input
-                v-model.number="state.bnbTimeLimitMs"
-                type="number"
-                outlined
-                dense
-                label="Time limit (ms)"
-                min="1000"
-                step="1000"
-              >
-                <template #append>
-                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
-                    <q-tooltip max-width="300px">
-                      Maximum time the algorithm will search for a better
-                      solution, in milliseconds. The search stops after this
-                      time and returns the best result found so far.
-                      180 000 ms = 3 minutes.
-                    </q-tooltip>
-                  </q-icon>
-                </template>
-              </q-input>
-            </div>
-          </template>
-          <template v-if="state.algorithm !== 'ffd'">
             <div class="col-6 col-sm-3 col-md-2">
               <q-input
                 v-model.number="state.scoringParams.boardUsePenalty"
@@ -290,7 +237,6 @@
                 </template>
               </q-input>
             </div>
-          </template>
         </div>
       </div>
 
@@ -504,27 +450,15 @@
               @click="openPrintView"
             />
           </div>
-          <div v-if="lastStats" class="col text-caption text-grey-7">
-            {{ lastStats.totalNodesExplored.toLocaleString() }} nodes explored
-            in {{ (lastStats.totalElapsedMs / 1000).toFixed(1) }}s
-            {{ lastStats.exhaustive ? '(exhaustive)' : '(time limit)' }}
-          </div>
         </div>
         <q-linear-progress
-          v-if="isRunning && state.algorithm !== 'ffd'"
+          v-if="isRunning"
           indeterminate
           color="primary"
           class="q-mb-sm"
         />
-        <div v-if="isRunning && state.algorithm === 'branchAndBound'" class="text-caption text-grey-7 q-mb-sm">
+        <div v-if="isRunning" class="text-caption text-grey-7 q-mb-sm">
           {{ (elapsedMs / 1000).toFixed(1) }}s elapsed
-          <template v-if="progress">
-            &nbsp;|&nbsp; {{ progress.nodesExplored.toLocaleString() }} nodes
-            &nbsp;|&nbsp; Best: {{ progress.boardsUsedInBest }} boards used
-          </template>
-        </div>
-        <div v-if="isRunning && state.algorithm === 'ilp'" class="text-caption text-grey-7 q-mb-sm">
-          {{ (elapsedMs / 1000).toFixed(1) }}s elapsed — solving ILP
         </div>
       </div>
 
@@ -870,8 +804,6 @@ import {
   computeScoreBreakdown,
 } from 'src/utils/boardCutOptimizer';
 import type {
-  BnBProgress,
-  BnBStats,
   CutOptimizerInput,
   CutOptimizerResult,
   CutPattern,
@@ -1015,8 +947,6 @@ const workerClient = new CutOptimizerWorker();
 const result = ref<CutOptimizerResult | null>(null);
 const isRunning = ref(false);
 const elapsedMs = ref(0);
-const progress = ref<BnBProgress | null>(null);
-const lastStats = ref<BnBStats | null>(null);
 let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 
 onUnmounted(() => {
@@ -1085,8 +1015,6 @@ async function calculate() {
   workerClient.cancel();
   isRunning.value = true;
   elapsedMs.value = 0;
-  progress.value = null;
-  lastStats.value = null;
 
   const startTime = Date.now();
   elapsedTimer = setInterval(() => {
@@ -1094,33 +1022,10 @@ async function calculate() {
   }, 100);
 
   try {
-    if (state.value.algorithm === 'ffd') {
-      result.value = await workerClient.runFfd(inp);
-    } else if (state.value.algorithm === 'ilp') {
-      result.value = await workerClient.runIlp(
-        inp,
-        { ...state.value.scoringParams },
-      );
-    } else {
-      const timeLimitMs = state.value.bnbExhaustive
-        ? Number.MAX_SAFE_INTEGER
-        : state.value.bnbTimeLimitMs;
-      const { result: r, stats } = await workerClient.runBnB(
-        inp,
-        {
-          scoringParams: { ...state.value.scoringParams },
-          timeLimitMs,
-        },
-        (p) => {
-          progress.value = { ...p };
-          if (p.intermediateResult) {
-            result.value = p.intermediateResult;
-          }
-        },
-      );
-      result.value = r;
-      lastStats.value = stats ?? null;
-    }
+    result.value = await workerClient.run(
+      inp,
+      { ...state.value.scoringParams },
+    );
   } catch (e) {
     if ((e as Error).message !== 'Cancelled') {
       $q.notify({ type: 'negative', message: `Calculation error: ${(e as Error).message}` });
@@ -1149,7 +1054,7 @@ const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
 });
 
 const scoreBreakdown = computed<ScoreBreakdown | null>(() => {
-  if (!result.value || state.value.algorithm === 'ffd') return null;
+  if (!result.value) return null;
   const allBoards = buildInput()?.stockTypes.flatMap((st) => st.boards) ?? [];
   const patterns = Object.values(result.value.patternsByType).flat();
   return computeScoreBreakdown(

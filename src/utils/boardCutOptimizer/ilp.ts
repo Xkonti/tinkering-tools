@@ -9,7 +9,6 @@ import type {
   UnfulfilledPiece,
 } from './types';
 import { computeSummary } from './buildOutput';
-import { optimizeCuts } from './ffd';
 
 // ============================================================
 // Types for ILP internals
@@ -552,26 +551,15 @@ export function optimizeCutsIlp(
   for (const [typeName, pieces] of piecesByType) {
     const boards = boardsByType.get(typeName) ?? [];
 
-    let result: {
-      patterns: CutPattern[];
-      unfulfilled: UnfulfilledPiece[];
-    };
-
-    try {
-      result = solveTypeIlp(
-        boards,
-        pieces,
-        typeName,
-        kerf,
-        minUsefulRemnant,
-        scoringParams,
-        highs,
-      );
-    } catch {
-      // ILP failed — fall back to FFD
-      const ffdResult = optimizeCuts(input);
-      return ffdResult;
-    }
+    const result = solveTypeIlp(
+      boards,
+      pieces,
+      typeName,
+      kerf,
+      minUsefulRemnant,
+      scoringParams,
+      highs,
+    );
 
     if (result.patterns.length > 0) {
       patternsByType[typeName] = result.patterns;

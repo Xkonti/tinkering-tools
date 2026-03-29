@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { useToolProjects } from 'src/composables/useToolProjects';
 import type { DisplaySettings, RoundingStrategy } from 'src/utils/units';
-import type { AlgorithmChoice, CutOptimizerResult, ScoringParams } from 'src/utils/boardCutOptimizer';
+import type { CutOptimizerResult, ScoringParams } from 'src/utils/boardCutOptimizer';
 import { DEFAULT_SCORING_PARAMS } from 'src/utils/boardCutOptimizer';
 
 export interface StockTypeInput {
@@ -34,10 +34,7 @@ export interface BoardCutOptimizerState {
   stockTypes: StockTypeInput[];
   requiredPieces: RequiredPieceInput[];
   // Algorithm settings (per-project)
-  algorithm: AlgorithmChoice;
   scoringParams: ScoringParams;
-  bnbTimeLimitMs: number;
-  bnbExhaustive: boolean;
   // Display settings (per-project)
   unitSystem: 'imperial' | 'metric';
   metricUnitSymbol: DisplaySettings['metricUnitSymbol'];
@@ -172,10 +169,7 @@ function migrateLegacyData(): BoardCutOptimizerState | undefined {
   return {
     kerf, kerfRaw, minUsefulRemnant, minUsefulRemnantRaw,
     stockTypes, requiredPieces,
-    algorithm: 'branchAndBound' as const,
     scoringParams: { ...DEFAULT_SCORING_PARAMS },
-    bnbTimeLimitMs: 180_000,
-    bnbExhaustive: false,
     ...ds,
   };
 }
@@ -204,10 +198,7 @@ function createDefaults(): BoardCutOptimizerState {
         name: '',
       },
     ],
-    algorithm: 'branchAndBound',
     scoringParams: { ...DEFAULT_SCORING_PARAMS },
-    bnbTimeLimitMs: 180_000,
-    bnbExhaustive: false,
     unitSystem: 'imperial',
     metricUnitSymbol: 'cm',
     metricResolutionMm: 1,
@@ -235,27 +226,21 @@ export const useBoardCutOptimizerStore = defineStore(
       completeImport,
     } = useToolProjects<BoardCutOptimizerState>({
       toolId: 'board-cut-optimizer',
-      currentVersion: 2,
+      currentVersion: 3,
       importers: {
         1: (raw: unknown) => ({
-          ...(raw as Omit<BoardCutOptimizerState, 'algorithm' | 'scoringParams' | 'bnbTimeLimitMs' | 'bnbExhaustive'>),
-          algorithm: 'branchAndBound' as const,
+          ...(raw as Omit<BoardCutOptimizerState, 'scoringParams'>),
           scoringParams: { ...DEFAULT_SCORING_PARAMS },
-          bnbTimeLimitMs: 180_000,
-          bnbExhaustive: false,
         }) as BoardCutOptimizerState,
         2: (raw: unknown) => {
           const s = raw as Record<string, unknown>;
-          if (!('bnbExhaustive' in s)) {
-            s.bnbExhaustive = false;
-          }
-          // Add wastePower to existing scoringParams
           const sp = s.scoringParams as Record<string, unknown> | undefined;
           if (sp && !('wastePower' in sp)) {
             sp.wastePower = 1;
           }
           return s as unknown as BoardCutOptimizerState;
         },
+        3: (raw: unknown) => raw as BoardCutOptimizerState,
       },
       defaults: createDefaults,
       migrate: migrateLegacyData,
@@ -266,10 +251,7 @@ export const useBoardCutOptimizerStore = defineStore(
       const defaults = createDefaults();
       return rawCreateProject(name, {
         ...defaults,
-        algorithm: state.value.algorithm,
         scoringParams: { ...state.value.scoringParams },
-        bnbTimeLimitMs: state.value.bnbTimeLimitMs,
-        bnbExhaustive: state.value.bnbExhaustive,
         unitSystem: state.value.unitSystem,
         metricUnitSymbol: state.value.metricUnitSymbol,
         metricResolutionMm: state.value.metricResolutionMm,

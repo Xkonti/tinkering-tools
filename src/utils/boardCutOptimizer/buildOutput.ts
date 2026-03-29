@@ -1,83 +1,8 @@
 import type {
   CutPattern,
   CutOptimizerResult,
-  DemandItem,
-  OpenBoard,
-  PlacedPiece,
   StockType,
-  UnfulfilledPiece,
 } from './types';
-
-export function buildCutPatterns(
-  openBoards: OpenBoard[],
-  kerf: number,
-  minUsefulRemnant: number,
-): CutPattern[] {
-  const patterns: CutPattern[] = [];
-
-  for (const board of openBoards) {
-    const placedPieces: PlacedPiece[] = [];
-    let offset = 0;
-
-    for (let i = 0; i < board.pieces.length; i++) {
-      const item = board.pieces[i]!;
-      if (i > 0) offset += kerf;
-
-      const piece: PlacedPiece = {
-        length: item.length,
-        startOffset: offset,
-      };
-      if (item.name) piece.name = item.name;
-      placedPieces.push(piece);
-      offset += item.length;
-    }
-
-    const n = placedPieces.length;
-    const piecesLen = placedPieces.reduce((s, p) => s + p.length, 0);
-    const betweenKerf = Math.max(0, n - 1) * kerf;
-    // Trailing kerf (trim cut after last piece) only if enough board remains
-    const rawRemainder = board.stockBoard.length - piecesLen - betweenKerf;
-    const trailingKerf = rawRemainder >= kerf ? kerf : 0;
-    const totalKerf = betweenKerf + trailingKerf;
-    const remainder = board.stockBoard.length - piecesLen - totalKerf;
-
-    patterns.push({
-      stockBoard: board.stockBoard,
-      pieces: placedPieces,
-      totalKerf,
-      remainder,
-      remainderIsUsable: remainder >= minUsefulRemnant,
-    });
-  }
-
-  return patterns;
-}
-
-export function aggregateUnfulfilled(
-  items: DemandItem[],
-  typeName: string,
-): UnfulfilledPiece[] {
-  const groups = new Map<string, UnfulfilledPiece>();
-
-  for (const item of items) {
-    const key = `${String(item.length)}|${item.name ?? ''}`;
-    const existing = groups.get(key);
-    if (existing) {
-      existing.quantity++;
-    } else {
-      const uf: UnfulfilledPiece = {
-        stockTypeName: typeName,
-        length: item.length,
-        quantity: 1,
-        reason: 'Not enough stock available',
-      };
-      if (item.name) uf.name = item.name;
-      groups.set(key, uf);
-    }
-  }
-
-  return [...groups.values()];
-}
 
 export function computeSummary(
   patternsByType: Record<string, CutPattern[]>,

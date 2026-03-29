@@ -65,9 +65,7 @@ export interface CutOptimizerResult {
   };
 }
 
-// --- Algorithm selection ---
-
-export type AlgorithmChoice = 'ffd' | 'branchAndBound' | 'ilp';
+// --- Scoring ---
 
 export interface ScoringParams {
   boardUsePenalty: number;
@@ -75,39 +73,4 @@ export interface ScoringParams {
   wastePower: number;
   leftoverBonus: number;
   leftoverPower: number;
-}
-
-export interface BnBOptions {
-  scoringParams: ScoringParams;
-  timeLimitMs: number;
-}
-
-export interface BnBProgress {
-  elapsedMs: number;
-  nodesExplored: number;
-  bestScore: number;
-  boardsUsedInBest: number;
-  improved: boolean;
-  intermediateResult?: CutOptimizerResult;
-}
-
-export interface BnBStats {
-  totalNodesExplored: number;
-  totalNodesPruned: number;
-  totalElapsedMs: number;
-  exhaustive: boolean;
-}
-
-// --- Internal types for algorithms ---
-
-export interface DemandItem {
-  length: number;
-  name?: string;
-}
-
-export interface OpenBoard {
-  stockBoard: StockBoard;
-  pieces: DemandItem[];
-  usedLength: number;
-  remainingCapacity: number;
 }

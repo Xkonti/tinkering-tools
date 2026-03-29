@@ -1,11 +1,11 @@
 import type { CutPattern, ScoringParams, StockBoard } from './types';
 
 export const DEFAULT_SCORING_PARAMS: ScoringParams = {
-  boardUsePenalty: 100,
+  boardUsePenalty: 500,
   wastePenalty: 1,
-  wastePower: 1,
+  wastePower: 1.5,
   leftoverBonus: 50,
-  leftoverPower: 1.5,
+  leftoverPower: 0.2,
 };
 
 function leftoverValue(

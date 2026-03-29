@@ -48,13 +48,23 @@ export function scoreSolution(
     (max, b) => Math.max(max, b.length),
     0,
   );
+  // Max board length per stock type (for proportional board penalty)
+  const maxLenByType = new Map<string, number>();
+  for (const b of allBoards) {
+    const cur = maxLenByType.get(b.stockTypeName) ?? 0;
+    if (b.length > cur) maxLenByType.set(b.stockTypeName, b.length);
+  }
+
   let score = 0;
 
-  // Cost per board used
-  score += params.boardUsePenalty * patterns.length;
-
-  // Used boards: remainder scoring
+  // Used boards: board penalty + remainder scoring
   for (const p of patterns) {
+    // Proportional board penalty (scrap boards below minUsefulRemnant are free)
+    if (p.stockBoard.length >= minUsefulRemnant) {
+      const typeMax = maxLenByType.get(p.stockBoard.stockTypeName) ?? p.stockBoard.length;
+      score += params.boardUsePenalty * (p.stockBoard.length / typeMax);
+    }
+
     if (p.remainderIsUsable) {
       score -=
         params.leftoverBonus *
@@ -122,8 +132,19 @@ export function computeScoreBreakdown(
     total: 0,
   };
 
+  // Max board length per stock type
+  const maxLenByType2 = new Map<string, number>();
+  for (const b of allBoards) {
+    const cur = maxLenByType2.get(b.stockTypeName) ?? 0;
+    if (b.length > cur) maxLenByType2.set(b.stockTypeName, b.length);
+  }
+
   const usedBoards = patterns.map((p) => {
-    const bup = params.boardUsePenalty;
+    let bup = 0;
+    if (p.stockBoard.length >= minUsefulRemnant) {
+      const typeMax = maxLenByType2.get(p.stockBoard.stockTypeName) ?? p.stockBoard.length;
+      bup = params.boardUsePenalty * (p.stockBoard.length / typeMax);
+    }
     let waste = 0;
     let leftover = 0;
     if (p.remainderIsUsable) {

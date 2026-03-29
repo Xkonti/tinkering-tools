@@ -277,13 +277,14 @@
                 <template #append>
                   <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
                     <q-tooltip max-width="300px">
-                      Exponent that controls how much longer leftovers are
-                      valued over shorter ones. At 1.0 the value grows
-                      linearly with length. Values above 1.0 make long
-                      leftovers disproportionately more valuable (e.g. at
-                      1.5, a leftover twice as long is worth ~2.8x more).
-                      Values below 1.0 flatten the curve, treating all
-                      usable leftovers more equally.
+                      Controls the shape of the leftover reward curve,
+                      not the overall magnitude (use Leftover bonus for
+                      that). Higher values reduce the absolute bonus but
+                      make long leftovers relatively much more valuable
+                      than short ones. Lower values increase the absolute
+                      bonus and treat all usable leftovers more equally.
+                      At 1.0: bonus is proportional to length. At 2.0:
+                      a leftover half as long gets only 25% of the bonus.
                     </q-tooltip>
                   </q-icon>
                 </template>

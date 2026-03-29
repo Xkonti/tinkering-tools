@@ -43,10 +43,14 @@ function scoreOpenBoardsDirect(
   powFn: (x: number) => number,
   wasteVal: (len: number) => number,
 ): number {
-  let score = boardUsePenalty * openBoards.length;
+  let score = 0;
 
   for (let i = 0; i < openBoards.length; i++) {
     const ob = openBoards[i]!;
+    // Proportional board penalty (0 for scrap boards)
+    if (ob.stockBoard.length >= minUsefulRemnant) {
+      score += boardUsePenalty * (ob.stockBoard.length / maxBoardLength);
+    }
     const n = ob.pieces.length;
     const pLen = ob.pieces.reduce((s, p) => s + p.length, 0);
     const betweenKerf = Math.max(0, n - 1) * kerf;
@@ -180,7 +184,11 @@ function lsBoardScore(
   const rawRem = boardLen - board.totalPieceLength - betweenKerf;
   const trailKerf = rawRem >= kerf ? kerf : 0;
   const remainder = boardLen - board.totalPieceLength - betweenKerf - trailKerf;
-  let score = boardUsePenalty;
+  // Proportional board penalty (0 for scrap boards)
+  let score =
+    boardLen >= minUsefulRemnant
+      ? boardUsePenalty * (boardLen / maxBoardLength)
+      : 0;
   if (remainder >= minUsefulRemnant) {
     score -= leftoverBonus * powFn(remainder / maxBoardLength);
   } else {
@@ -496,6 +504,16 @@ function solveTypeBnB(
     boardLenByIdx[i] = boards[i]!.length;
   }
 
+  // Per-board use penalty (proportional to length, 0 for scrap boards)
+  const boardPenaltyByIdx = new Float64Array(boards.length);
+  for (let i = 0; i < boards.length; i++) {
+    const bLen = boardLenByIdx[i]!;
+    boardPenaltyByIdx[i] =
+      bLen >= minUsefulRemnant
+        ? boardUsePenalty * (bLen / maxBoardLength)
+        : 0;
+  }
+
   // Suffix sums: remainingSuffix[i] = sum of demandItems[i..end].length
   const remainingSuffix = new Float64Array(demandItems.length + 1);
   for (let i = demandItems.length - 1; i >= 0; i--) {
@@ -598,7 +616,7 @@ function solveTypeBnB(
 
   const openBoards: MutableBoard[] = [];
   const usedMask = new Uint8Array(boards.length);
-  // Unused boards don't contribute to score
+  let currentBoardPenalty = 0; // sum of proportional penalties for open boards
   let nodesExplored = 0;
   let nodesPruned = 0;
   let cancelled = false;
@@ -611,7 +629,7 @@ function solveTypeBnB(
   // --- Inline leaf scoring (zero allocation) ---
 
   function scoreLeaf(): number {
-    let score = boardUsePenalty * openBoards.length;
+    let score = currentBoardPenalty;
 
     for (let i = 0; i < openBoards.length; i++) {
       const board = openBoards[i]!;
@@ -636,7 +654,7 @@ function solveTypeBnB(
   // --- Lower bound (zero allocation, frozen board detection) ---
 
   function lowerBound(pieceIdx: number): number {
-    let lb = boardUsePenalty * openBoards.length;
+    let lb = currentBoardPenalty;
 
     const totalRemaining = remainingSuffix[pieceIdx]!;
     if (totalRemaining === 0) return lb;
@@ -683,7 +701,7 @@ function solveTypeBnB(
       );
       const effectiveCap = bLen - (estPieces - 1) * kerf - kerf;
       covered += Math.max(0, effectiveCap);
-      lb += boardUsePenalty;
+      lb += boardPenaltyByIdx[bi]!;
     }
 
     if (covered < unplaced) return Infinity;
@@ -886,12 +904,14 @@ function solveTypeBnB(
       newBoard.pieces[0] = piece;
       openBoards.push(newBoard);
       usedMask[boardIdx] = 1;
+      currentBoardPenalty += boardPenaltyByIdx[boardIdx]!;
 
       recurse(pieceIdx + 1, newOpenIdx);
 
       // Undo
       openBoards.pop();
       usedMask[boardIdx] = 0;
+      currentBoardPenalty -= boardPenaltyByIdx[boardIdx]!;
       if (cancelled) return;
     }
   }

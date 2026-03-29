@@ -187,7 +187,11 @@ function computePatternDelta(
   const trailKerf = rawRem >= kerf ? kerf : 0;
   const remainder = rawRem - trailKerf;
 
-  let usedScore = params.boardUsePenalty;
+  // Proportional board penalty (0 for scrap boards)
+  let usedScore =
+    boardLength >= minUsefulRemnant
+      ? params.boardUsePenalty * (boardLength / maxBoardLength)
+      : 0;
   if (remainder >= minUsefulRemnant) {
     usedScore -=
       params.leftoverBonus *

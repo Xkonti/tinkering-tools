@@ -7,6 +7,7 @@
       "dependencies": {
         "@quasar/extras": "^1.16.4",
         "@vueuse/core": "^14.2.1",
+        "highs": "^1.8.0",
         "pinia": "^3.0.1",
         "quasar": "^2.16.0",
         "vue": "^3.5.22",
@@ -689,6 +690,8 @@
     "has-symbols": ["has-symbols@1.1.0", "", {}, "sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ=="],
 
     "hasown": ["hasown@2.0.2", "", { "dependencies": { "function-bind": "^1.1.2" } }, "sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ=="],
+
+    "highs": ["highs@1.8.0", "", {}, "sha512-0QFXXjU/mxU1y3Ec44QpESq6STkPauNDfIPf0welcUGjilpVYnfH9RepBvr0t9YDQPUniIcZTX9xyxqxF668ag=="],
 
     "hookable": ["hookable@5.5.3", "", {}, "sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ=="],
 

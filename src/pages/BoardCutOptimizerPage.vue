@@ -116,6 +116,130 @@
         </div>
       </div>
 
+      <!-- Algorithm Settings -->
+      <div class="col-12">
+        <q-separator />
+        <div class="text-h6 q-my-md">Scoring</div>
+        <div class="row q-col-gutter-md items-center">
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.boardUsePenalty"
+                type="number"
+                outlined
+                dense
+                label="Board use penalty"
+                step="10"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Flat cost added to the score for every board that is
+                      used. Higher values push the optimizer to pack pieces
+                      onto fewer boards. Lower values allow spreading pieces
+                      across more boards if that reduces waste.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.wastePenalty"
+                type="number"
+                outlined
+                dense
+                label="Waste penalty"
+                step="0.1"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Cost multiplier for wasted material (remainders
+                      too short to be useful, plus any unused stock boards
+                      shorter than the minimum useful remnant). Higher values
+                      make the optimizer try harder to eliminate small scraps.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.wastePower"
+                type="number"
+                outlined
+                dense
+                label="Waste curve"
+                step="0.1"
+                min="0.1"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Exponent controlling how much larger waste pieces
+                      are penalized vs smaller ones. At 1.0 the penalty
+                      is linear (proportional to length). Above 1.0,
+                      large waste pieces are penalized disproportionately
+                      more (e.g. at 1.5, one 20" waste costs more than
+                      two 10" wastes). This encourages the optimizer to
+                      spread waste across small pieces.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.leftoverBonus"
+                type="number"
+                outlined
+                dense
+                label="Leftover bonus"
+                step="5"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Reward multiplier for usable leftover pieces
+                      (remainders at least as long as the minimum useful
+                      remnant). Higher values make the optimizer prefer
+                      layouts that leave long, reusable offcuts rather than
+                      many short waste pieces. Works together with the
+                      leftover value curve.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+            <div class="col-6 col-sm-3 col-md-2">
+              <q-input
+                v-model.number="state.scoringParams.leftoverPower"
+                type="number"
+                outlined
+                dense
+                label="Leftover value curve"
+                step="0.1"
+                min="0.1"
+              >
+                <template #append>
+                  <q-icon name="info" class="cursor-pointer" size="xs" color="grey-6">
+                    <q-tooltip max-width="300px">
+                      Controls the shape of the leftover reward curve,
+                      not the overall magnitude (use Leftover bonus for
+                      that). Higher values reduce the absolute bonus but
+                      make long leftovers relatively much more valuable
+                      than short ones. Lower values increase the absolute
+                      bonus and treat all usable leftovers more equally.
+                      At 1.0: bonus is proportional to length. At 2.0:
+                      a leftover half as long gets only 25% of the bonus.
+                    </q-tooltip>
+                  </q-icon>
+                </template>
+              </q-input>
+            </div>
+        </div>
+      </div>
+
       <!-- Stock Inventory -->
       <div class="col-12">
         <q-separator />
@@ -292,6 +416,52 @@
         />
       </div>
 
+      <!-- Calculate button -->
+      <div class="col-12">
+        <q-separator />
+        <div class="row items-center q-col-gutter-md q-my-md">
+          <div class="col-auto">
+            <q-btn
+              color="primary"
+              label="Calculate"
+              icon="calculate"
+              no-caps
+              :loading="isRunning"
+              :disable="!inputValid"
+              @click="calculate"
+            />
+          </div>
+          <div v-if="isRunning" class="col-auto">
+            <q-btn
+              flat
+              no-caps
+              label="Cancel"
+              icon="cancel"
+              color="negative"
+              @click="cancelCalculation"
+            />
+          </div>
+          <div v-if="result && !isRunning" class="col-auto">
+            <q-btn
+              flat
+              no-caps
+              label="Print Results"
+              icon="print"
+              @click="openPrintView"
+            />
+          </div>
+        </div>
+        <q-linear-progress
+          v-if="isRunning"
+          indeterminate
+          color="primary"
+          class="q-mb-sm"
+        />
+        <div v-if="isRunning" class="text-caption text-grey-7 q-mb-sm">
+          {{ (elapsedMs / 1000).toFixed(1) }}s elapsed
+        </div>
+      </div>
+
       <!-- Results -->
       <template v-if="result">
         <!-- Unfulfilled warning -->
@@ -353,6 +523,69 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Score Breakdown -->
+        <div v-if="scoreBreakdown" class="col-12">
+          <q-separator />
+          <div class="text-h6 q-my-md">Score Breakdown</div>
+          <div class="row q-col-gutter-md q-mb-md">
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">Total Score</div>
+              <div class="text-h5">{{ scoreBreakdown.totals.total.toFixed(1) }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">Board Use Penalty</div>
+              <div class="text-h5 text-negative">+{{ scoreBreakdown.totals.boardUsePenalty.toFixed(1) }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">Waste Penalty</div>
+              <div class="text-h5 text-negative">+{{ scoreBreakdown.totals.wasteContribution.toFixed(1) }}</div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="text-subtitle2 text-grey-7">Leftover Bonus</div>
+              <div class="text-h5 text-positive">{{ scoreBreakdown.totals.leftoverContribution.toFixed(1) }}</div>
+            </div>
+          </div>
+          <q-expansion-item label="Per-board details" dense header-class="text-caption text-grey-7">
+            <div class="q-pa-sm">
+              <table class="text-caption" style="border-collapse: collapse; width: 100%;">
+                <thead>
+                  <tr class="text-grey-7">
+                    <th style="text-align: left; padding: 2px 8px;">Board</th>
+                    <th style="text-align: right; padding: 2px 8px;">Remainder</th>
+                    <th style="text-align: right; padding: 2px 8px;">Board Use</th>
+                    <th style="text-align: right; padding: 2px 8px;">Waste</th>
+                    <th style="text-align: right; padding: 2px 8px;">Leftover</th>
+                    <th style="text-align: right; padding: 2px 8px;">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(b, i) in scoreBreakdown.usedBoards" :key="'u' + i">
+                    <td style="padding: 2px 8px;">{{ b.boardName }} ({{ fmtDist(b.boardLength) }})</td>
+                    <td style="text-align: right; padding: 2px 8px;">
+                      {{ fmtDist(b.remainder) }}
+                      <span :class="b.remainderIsUsable ? 'text-positive' : 'text-negative'">
+                        ({{ b.remainderIsUsable ? 'usable' : 'waste' }})
+                      </span>
+                    </td>
+                    <td style="text-align: right; padding: 2px 8px;" class="text-negative">+{{ b.breakdown.boardUsePenalty.toFixed(1) }}</td>
+                    <td style="text-align: right; padding: 2px 8px;" class="text-negative">{{ b.breakdown.wasteContribution > 0 ? '+' + b.breakdown.wasteContribution.toFixed(1) : '' }}</td>
+                    <td style="text-align: right; padding: 2px 8px;" class="text-positive">{{ b.breakdown.leftoverContribution < 0 ? b.breakdown.leftoverContribution.toFixed(1) : '' }}</td>
+                    <td style="text-align: right; padding: 2px 8px; font-weight: 500;">{{ b.breakdown.total.toFixed(1) }}</td>
+                  </tr>
+                  <tr v-for="(b, i) in scoreBreakdown.unusedBoards" :key="'x' + i" class="text-grey-6">
+                    <td style="padding: 2px 8px;">{{ b.boardName }} ({{ fmtDist(b.boardLength) }}) — unused</td>
+                    <td style="text-align: right; padding: 2px 8px;">{{ fmtDist(b.boardLength) }} ({{ b.isUsable ? 'preserved' : 'waste' }})</td>
+                    <td style="text-align: right; padding: 2px 8px;"></td>
+                    <td style="text-align: right; padding: 2px 8px;">{{ b.breakdown.wasteContribution > 0 ? '+' + b.breakdown.wasteContribution.toFixed(1) : '' }}</td>
+                    <td style="text-align: right; padding: 2px 8px;">{{ b.breakdown.leftoverContribution < 0 ? b.breakdown.leftoverContribution.toFixed(1) : '' }}</td>
+                    <td style="text-align: right; padding: 2px 8px; font-weight: 500;">{{ b.breakdown.total.toFixed(1) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </q-expansion-item>
         </div>
 
         <!-- Cut Patterns by Type -->
@@ -438,6 +671,22 @@
                 />
               </template>
 
+              <!-- Trailing kerf gap (between last piece and remainder) -->
+              <div
+                v-if="
+                  pattern.pieces.length > 0 &&
+                  pattern.totalKerf >
+                    Math.max(0, pattern.pieces.length - 1) * state.kerf +
+                      1e-9
+                "
+                :style="{
+                  flexBasis:
+                    toPercent(state.kerf, pattern.stockBoard.length) + '%',
+                  backgroundColor: '#212121',
+                  minWidth: '1px',
+                }"
+              />
+
               <!-- Remainder -->
               <div
                 v-if="pattern.remainder > 0"
@@ -448,8 +697,8 @@
                       pattern.stockBoard.length,
                     ) + '%',
                   backgroundColor: pattern.remainderIsUsable
-                    ? '#FFC107'
-                    : '#BDBDBD',
+                    ? '#FF9800'
+                    : '#EF5350',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -501,8 +750,7 @@
 
       <!-- Empty state -->
       <div v-else class="col-12 text-center text-grey-5 q-pa-lg">
-        Fill in stock inventory and required pieces to see optimized cut
-        patterns
+        Fill in stock inventory and required pieces, then click Calculate
       </div>
     </div>
 
@@ -547,15 +795,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { useQuasar } from 'quasar';
+import { useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
-import { optimizeCuts } from 'src/utils/boardCutOptimizer';
+import {
+  CutOptimizerWorker,
+  computeScoreBreakdown,
+} from 'src/utils/boardCutOptimizer';
 import type {
   CutOptimizerInput,
   CutOptimizerResult,
   CutPattern,
   PlacedPiece,
+  ScoreBreakdown,
   StockBoard,
 } from 'src/utils/boardCutOptimizer';
 import { useBoardCutOptimizerStore } from 'src/stores/boardCutOptimizer';
@@ -566,6 +819,7 @@ import DistanceInput from 'src/components/DistanceInput.vue';
 import ToolProjectBar from 'src/components/ToolProjectBar.vue';
 
 const $q = useQuasar();
+const router = useRouter();
 const store = useBoardCutOptimizerStore();
 const {
   state,
@@ -689,6 +943,17 @@ function fmtDist(mm: number): string {
 
 // --- Optimization ---
 
+const workerClient = new CutOptimizerWorker();
+const result = ref<CutOptimizerResult | null>(null);
+const isRunning = ref(false);
+const elapsedMs = ref(0);
+let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+onUnmounted(() => {
+  if (elapsedTimer) clearInterval(elapsedTimer);
+  workerClient.dispose();
+});
+
 function buildInput(): CutOptimizerInput | null {
   const k = state.value.kerf;
   const minR = state.value.minUsefulRemnant;
@@ -741,15 +1006,45 @@ function buildInput(): CutOptimizerInput | null {
   };
 }
 
-const result = ref<CutOptimizerResult | null>(null);
-watch(
-  state,
-  () => {
-    const inp = buildInput();
-    result.value = inp ? optimizeCuts(inp) : null;
-  },
-  { deep: true, immediate: true },
-);
+const inputValid = computed(() => buildInput() !== null);
+
+async function calculate() {
+  const inp = buildInput();
+  if (!inp) return;
+
+  workerClient.cancel();
+  isRunning.value = true;
+  elapsedMs.value = 0;
+
+  const startTime = Date.now();
+  elapsedTimer = setInterval(() => {
+    elapsedMs.value = Date.now() - startTime;
+  }, 100);
+
+  try {
+    result.value = await workerClient.run(
+      inp,
+      { ...state.value.scoringParams },
+    );
+  } catch (e) {
+    if ((e as Error).message !== 'Cancelled') {
+      $q.notify({ type: 'negative', message: `Calculation error: ${(e as Error).message}` });
+    }
+  } finally {
+    if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+    isRunning.value = false;
+  }
+}
+
+function cancelCalculation() {
+  workerClient.cancel();
+}
+
+function openPrintView() {
+  if (!result.value) return;
+  store.lastResult = result.value;
+  void router.push('/woodworking/board-cut-optimizer/print');
+}
 
 const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
   if (!result.value) return [];
@@ -758,17 +1053,29 @@ const sortedPatterns = computed<[string, CutPattern[]][]>(() => {
   );
 });
 
+const scoreBreakdown = computed<ScoreBreakdown | null>(() => {
+  if (!result.value) return null;
+  const allBoards = buildInput()?.stockTypes.flatMap((st) => st.boards) ?? [];
+  const patterns = Object.values(result.value.patternsByType).flat();
+  return computeScoreBreakdown(
+    patterns,
+    allBoards,
+    state.value.minUsefulRemnant,
+    state.value.scoringParams,
+  );
+});
+
 // --- Visualization helpers ---
 
 const PIECE_COLORS = [
-  '#4CAF50',
-  '#2196F3',
-  '#FF9800',
-  '#9C27B0',
-  '#00BCD4',
-  '#E91E63',
-  '#8BC34A',
-  '#FF5722',
+  '#7E9E82',
+  '#7A9BB5',
+  '#B0937A',
+  '#9683A4',
+  '#7AAAA4',
+  '#A4818D',
+  '#8EA47E',
+  '#9B8A7A',
 ];
 
 function pieceColor(length: number): string {

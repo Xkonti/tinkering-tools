@@ -1,7 +1,9 @@
 import { defineStore } from 'pinia';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useToolProjects } from 'src/composables/useToolProjects';
 import type { DisplaySettings, RoundingStrategy } from 'src/utils/units';
+import type { CutOptimizerResult, ScoringParams } from 'src/utils/boardCutOptimizer';
+import { DEFAULT_SCORING_PARAMS } from 'src/utils/boardCutOptimizer';
 
 export interface StockTypeInput {
   id: string;
@@ -31,6 +33,8 @@ export interface BoardCutOptimizerState {
   minUsefulRemnantRaw: string;
   stockTypes: StockTypeInput[];
   requiredPieces: RequiredPieceInput[];
+  // Algorithm settings (per-project)
+  scoringParams: ScoringParams;
   // Display settings (per-project)
   unitSystem: 'imperial' | 'metric';
   metricUnitSymbol: DisplaySettings['metricUnitSymbol'];
@@ -165,6 +169,7 @@ function migrateLegacyData(): BoardCutOptimizerState | undefined {
   return {
     kerf, kerfRaw, minUsefulRemnant, minUsefulRemnantRaw,
     stockTypes, requiredPieces,
+    scoringParams: { ...DEFAULT_SCORING_PARAMS },
     ...ds,
   };
 }
@@ -193,6 +198,7 @@ function createDefaults(): BoardCutOptimizerState {
         name: '',
       },
     ],
+    scoringParams: { ...DEFAULT_SCORING_PARAMS },
     unitSystem: 'imperial',
     metricUnitSymbol: 'cm',
     metricResolutionMm: 1,
@@ -220,19 +226,32 @@ export const useBoardCutOptimizerStore = defineStore(
       completeImport,
     } = useToolProjects<BoardCutOptimizerState>({
       toolId: 'board-cut-optimizer',
-      currentVersion: 1,
+      currentVersion: 3,
       importers: {
-        1: (raw: unknown) => raw as BoardCutOptimizerState,
+        1: (raw: unknown) => ({
+          ...(raw as Omit<BoardCutOptimizerState, 'scoringParams'>),
+          scoringParams: { ...DEFAULT_SCORING_PARAMS },
+        }) as BoardCutOptimizerState,
+        2: (raw: unknown) => {
+          const s = raw as Record<string, unknown>;
+          const sp = s.scoringParams as Record<string, unknown> | undefined;
+          if (sp && !('wastePower' in sp)) {
+            sp.wastePower = 1;
+          }
+          return s as unknown as BoardCutOptimizerState;
+        },
+        3: (raw: unknown) => raw as BoardCutOptimizerState,
       },
       defaults: createDefaults,
       migrate: migrateLegacyData,
     });
 
-    // When creating a new project, carry over display settings from the current project
+    // When creating a new project, carry over display + algorithm settings from the current project
     function createProject(name: string): string {
       const defaults = createDefaults();
       return rawCreateProject(name, {
         ...defaults,
+        scoringParams: { ...state.value.scoringParams },
         unitSystem: state.value.unitSystem,
         metricUnitSymbol: state.value.metricUnitSymbol,
         metricResolutionMm: state.value.metricResolutionMm,
@@ -251,6 +270,9 @@ export const useBoardCutOptimizerStore = defineStore(
       imperialShowFeet: state.value.imperialShowFeet,
       roundingStrategy: state.value.roundingStrategy,
     }));
+
+    // Last calculation result (shared with print page, not persisted)
+    const lastResult = ref<CutOptimizerResult | null>(null);
 
     const stockTypeNames = computed(() =>
       state.value.stockTypes.map((s) => s.name).filter((n) => n.length > 0),
@@ -302,6 +324,7 @@ export const useBoardCutOptimizerStore = defineStore(
       projects,
       activeProject,
       displaySettings,
+      lastResult,
       switchProject,
       createProject,
       duplicateProject,
